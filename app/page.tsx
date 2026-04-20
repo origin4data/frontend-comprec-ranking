@@ -5,7 +5,7 @@ import Image from "next/image";
 import { RankingEntry } from "@/lib/types";
 
 const REFRESH_INTERVAL    = 15_000;
-const CAROUSEL_INTERVAL   = 10_000;
+const CAROUSEL_INTERVAL   = 22_000;
 const TRANSITION_MS       = 400;
 const TABLE_PAGE_SIZE     = 5;
 const TABLE_PAGE_INTERVAL = 6_000;
