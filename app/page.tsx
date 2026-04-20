@@ -127,8 +127,10 @@ export default function TVPage() {
   const hasBoth  = mensalRanking.length > 0 && hasAnual;
 
   const fetchRanking = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 12_000);
     try {
-      const res = await fetch("/api/rankings");
+      const res = await fetch("/api/rankings", { signal: controller.signal });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Erro HTTP ${res.status}`);
@@ -139,8 +141,12 @@ export default function TVPage() {
       setUpdatedAt(new Date().toISOString());
       setError(null);
     } catch (e: any) {
-      setError(e.message ?? "Erro ao carregar dados");
+      const msg = e.name === "AbortError"
+        ? "Tempo esgotado ao carregar (12s) — verifique a conexão"
+        : e.message ?? "Erro ao carregar dados";
+      setError(msg);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, []);
@@ -372,20 +378,26 @@ export default function TVPage() {
           {/* ── Table ──────────────────────────────────── */}
           {loading ? (
             <div className="flex-1 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-10 h-10 rounded-full animate-spin"
-                  style={{ border: "1px solid rgba(72,186,184,0.15)", borderTopColor: "rgba(72,186,184,0.65)" }} />
+              <div className="flex flex-col items-center gap-6">
+                <div className="rounded-full animate-spin"
+                  style={{ width: 64, height: 64, border: "3px solid rgba(72,186,184,0.18)", borderTopColor: "rgba(72,186,184,0.85)" }} />
                 <span className="font-body font-medium uppercase"
-                  style={{ fontSize: 10, letterSpacing: "0.28em", color: "var(--text-3)" }}>
+                  style={{ fontSize: 22, letterSpacing: "0.28em", color: "var(--text-2)" }}>
                   Carregando
                 </span>
               </div>
             </div>
           ) : error ? (
-            <div className="flex-1 flex items-center justify-center">
-              <p className="font-body text-sm text-center max-w-md" style={{ color: "rgba(248,113,113,0.6)" }}>
-                {error}
-              </p>
+            <div className="flex-1 flex items-center justify-center px-10">
+              <div className="text-center max-w-3xl">
+                <p className="font-body font-semibold uppercase mb-4"
+                  style={{ fontSize: 14, letterSpacing: "0.3em", color: "rgba(248,113,113,0.85)" }}>
+                  Erro ao carregar
+                </p>
+                <p className="font-body" style={{ fontSize: 22, color: "var(--text-2)", lineHeight: 1.4 }}>
+                  {error}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex-1 overflow-hidden relative min-h-0">

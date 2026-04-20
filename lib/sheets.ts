@@ -69,7 +69,7 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   mensal: RankingEntry[];
   anual: RankingEntry[];
 }> {
-  const res = await fetch(`${jsonUrl}?_t=${Date.now()}`, { cache: "no-store" });
+  const res = await fetch(jsonUrl, { next: { revalidate: 10 } });
   if (!res.ok) throw new Error(`Erro ao buscar dados: ${res.status}`);
 
   const text = await res.text();
