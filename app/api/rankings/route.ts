@@ -3,11 +3,12 @@ import { fetchAllRankings } from "@/lib/sheets";
 
 export const revalidate = 10;
 
+// URL pública do Apps Script — pode ser sobrescrita via env var em dev/preview
+const DEFAULT_SHEETS_URL =
+  "https://script.google.com/macros/s/AKfycbzZbdBVsfetr33B8-CAfLBa29yywBu_pQOeyv6esuruwdXfefiQzya5DJkX7YQm0Aug/exec";
+
 export async function GET() {
-  const url = process.env.NEXT_PUBLIC_SHEETS_JSON_URL;
-  if (!url) {
-    return NextResponse.json({ error: "URL não configurada" }, { status: 400 });
-  }
+  const url = process.env.NEXT_PUBLIC_SHEETS_JSON_URL || DEFAULT_SHEETS_URL;
 
   try {
     const data = await fetchAllRankings(url);
