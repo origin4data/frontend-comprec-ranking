@@ -55,23 +55,32 @@ type View = "mensal" | "anual";
 function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; rankIdx: number }) {
   const t        = RANK[rankIdx] ?? RANK[2];
   const isFirst  = rankIdx === 0;
-  const size     = isFirst ? 136 : 112;
+  const size     = isFirst ? 220 : 168;
   const initials = nome.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
 
   const ring: React.CSSProperties = {
     width: size, height: size,
     border:    `2px solid ${t.border}`,
-    boxShadow: `0 0 ${isFirst ? 32 : 20}px ${t.glow}, 0 0 0 1px rgba(255,255,255,0.04)`,
+    boxShadow: `0 0 ${isFirst ? 40 : 26}px ${t.glow}, 0 0 0 1px rgba(255,255,255,0.04)`,
   };
 
   return foto ? (
-    <div className="mx-auto mb-5 rounded-full overflow-hidden flex-shrink-0" style={ring}>
-      <img src={foto} alt={nome} className="w-full h-full object-cover" />
+    <div className="mx-auto mb-5 rounded-full overflow-hidden flex-shrink-0 relative" style={ring}>
+      <Image
+        src={foto}
+        alt={nome}
+        fill
+        sizes={`${size}px`}
+        quality={92}
+        className="object-cover"
+        style={{ imageRendering: "auto" }}
+        unoptimized={false}
+      />
     </div>
   ) : (
     <div
       className="mx-auto mb-5 rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0"
-      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 32 : 26, letterSpacing: "0.07em" }}>
+      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 48 : 38, letterSpacing: "0.07em" }}>
       {initials}
     </div>
   );
