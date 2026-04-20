@@ -25,6 +25,9 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# libc6-compat é exigida pelo sharp (otimização de imagens) no Alpine
+RUN apk add --no-cache libc6-compat
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -42,6 +45,9 @@ RUN chown nextjs:nodejs .next
 # Copia o build standalone e os arquivos estáticos
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Instala o sharp (obrigatório pra otimização de imagens em standalone)
+RUN npm install --omit=dev sharp
 
 # Muda para o utilizador seguro
 USER nextjs
