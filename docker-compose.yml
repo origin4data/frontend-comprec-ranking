@@ -4,7 +4,7 @@ services:
   frontend:
     image: origin4data/ranking-comprec:latest
     environment:
-      - NEXT_PUBLIC_SHEETS_JSON_URL=${NEXT_PUBLIC_SHEETS_JSON_URL}
+      - NEXT_PUBLIC_SHEETS_JSON_URL=https://script.google.com/macros/s/AKfycbzZbdBVsfetr33B8-CAfLBa29yywBu_pQOeyv6esuruwdXfefiQzya5DJkX7YQm0Aug/exec
     networks:
       - network_swarm_public
     deploy:
