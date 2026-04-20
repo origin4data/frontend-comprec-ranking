@@ -57,6 +57,7 @@ function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; ra
   const isFirst  = rankIdx === 0;
   const size     = isFirst ? 220 : 168;
   const initials = nome.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+  const [imgFailed, setImgFailed] = useState(false);
 
   const ring: React.CSSProperties = {
     width: size, height: size,
@@ -64,24 +65,26 @@ function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; ra
     boxShadow: `0 0 ${isFirst ? 40 : 26}px ${t.glow}, 0 0 0 1px rgba(255,255,255,0.04)`,
   };
 
-  return foto ? (
+  const showFallback = !foto || imgFailed;
+
+  return showFallback ? (
+    <div
+      className="mx-auto mb-5 rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0"
+      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 48 : 38, letterSpacing: "0.07em" }}>
+      {initials}
+    </div>
+  ) : (
     <div className="mx-auto mb-5 rounded-full overflow-hidden flex-shrink-0 relative" style={ring}>
       <Image
-        src={foto}
+        src={foto!}
         alt={nome}
         fill
         sizes={`${size}px`}
         quality={92}
         className="object-cover"
-        style={{ imageRendering: "auto" }}
-        unoptimized={false}
+        unoptimized
+        onError={() => setImgFailed(true)}
       />
-    </div>
-  ) : (
-    <div
-      className="mx-auto mb-5 rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0"
-      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 48 : 38, letterSpacing: "0.07em" }}>
-      {initials}
     </div>
   );
 }
