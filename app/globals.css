@@ -5,9 +5,9 @@
 @layer base {
   :root {
     /* ── Surface ─────────────────────────────── */
-    --bg:         #020D0B;
-    --surface:    #081410;
-    --surface-hi: #0E1C17;
+    --bg:         #0B5348;
+    --surface:    #094840;
+    --surface-hi: #0F5D51;
 
     /* ── Text ────────────────────────────────── */
     --text:   #E8EDE8;

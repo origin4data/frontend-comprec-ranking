@@ -372,7 +372,7 @@ export default function TVPage() {
             <div className="flex-1 overflow-hidden relative min-h-0">
               {/* Bottom fade */}
               <div className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-10"
-                style={{ background: "linear-gradient(to top, #020D0B, transparent)" }} />
+                style={{ background: "linear-gradient(to top, var(--bg), transparent)" }} />
 
               <table className="w-full">
                 <thead>
