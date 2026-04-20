@@ -88,8 +88,9 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
     return { mensal: parseRows(raw), anual: [] };
   }
 
+  const obj = (raw ?? {}) as { mensal?: unknown; anual?: unknown };
   return {
-    mensal: parseRows(Array.isArray(raw.mensal) ? raw.mensal : []),
-    anual: parseRows(Array.isArray(raw.anual) ? raw.anual : []),
+    mensal: parseRows(Array.isArray(obj.mensal) ? obj.mensal : []),
+    anual: parseRows(Array.isArray(obj.anual) ? obj.anual : []),
   };
 }
