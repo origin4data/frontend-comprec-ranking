@@ -4,4 +4,5 @@ export interface RankingEntry {
   total_repasse: number;
   qtd_vendas: number;
   ultima_venda: string;
+  foto?: string;
 }

@@ -1,9 +1,21 @@
 import type { Metadata } from "next";
-import { DM_Serif_Display, DM_Sans } from "next/font/google";
+import { Playfair_Display, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 
-const fontDisplay = DM_Serif_Display({ weight: "400", subsets: ["latin"], display: "swap", variable: "--font-display" });
-const fontBody = DM_Sans({ subsets: ["latin"], display: "swap", variable: "--font-body", weight: ["300", "400", "500", "600", "700"] });
+const fontDisplay = Playfair_Display({
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-display",
+});
+
+const fontBody = Source_Sans_3({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-body",
+  weight: ["300", "400", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Comprec — Ranking de Vendas",

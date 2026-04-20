@@ -1,31 +1,131 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
-import { fetchRankingFromSheets } from "@/lib/sheets";
 import { RankingEntry } from "@/lib/types";
 
-const REFRESH_INTERVAL = 15_000;
-const JSON_URL = process.env.NEXT_PUBLIC_SHEETS_JSON_URL ?? "";
-const MESES = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const REFRESH_INTERVAL   = 15_000;
+const CAROUSEL_INTERVAL  = 10_000;
+const TRANSITION_MS      = 400;
+const SPOTLIGHT_INTERVAL = 3_200;
+
+const MESES = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+// Design tokens — matches .interface-design/system.md
+const RANK = [
+  {
+    color: "#C8A040", glow: "rgba(200,160,64,0.42)",
+    surface: "rgba(200,160,64,0.07)", border: "#C8A040",
+    dim: "rgba(200,160,64,0.5)", roman: "I",
+  },
+  {
+    color: "#91A0AC", glow: "rgba(145,160,172,0.3)",
+    surface: "rgba(145,160,172,0.05)", border: "#91A0AC",
+    dim: "rgba(145,160,172,0.45)", roman: "II",
+  },
+  {
+    color: "#9C6242", glow: "rgba(156,98,66,0.3)",
+    surface: "rgba(156,98,66,0.06)", border: "#9C6242",
+    dim: "rgba(156,98,66,0.5)", roman: "III",
+  },
+] as const;
+
+function useCountUp(target: number, duration = 1200) {
+  const [value, setValue] = useState(0);
+  const prev = useRef(0);
+  useEffect(() => {
+    const from = prev.current;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - t0) / duration, 1);
+      const e = 1 - Math.pow(1 - p, 3);
+      setValue(Math.round(from + (target - from) * e));
+      if (p < 1) requestAnimationFrame(tick);
+      else prev.current = target;
+    };
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+  return value;
+}
+
+type View = "mensal" | "anual";
+
+// ── Avatar component ──────────────────────────────────────────
+function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; rankIdx: number }) {
+  const t        = RANK[rankIdx] ?? RANK[2];
+  const isFirst  = rankIdx === 0;
+  const size     = isFirst ? 136 : 112;
+  const initials = nome.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+
+  const ring: React.CSSProperties = {
+    width: size, height: size,
+    border:    `2px solid ${t.border}`,
+    boxShadow: `0 0 ${isFirst ? 32 : 20}px ${t.glow}, 0 0 0 1px rgba(255,255,255,0.04)`,
+  };
+
+  return foto ? (
+    <div className="mx-auto mb-5 rounded-full overflow-hidden flex-shrink-0" style={ring}>
+      <img src={foto} alt={nome} className="w-full h-full object-cover" />
+    </div>
+  ) : (
+    <div
+      className="mx-auto mb-5 rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0"
+      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 32 : 26, letterSpacing: "0.07em" }}>
+      {initials}
+    </div>
+  );
+}
+
+// ── Stats item ────────────────────────────────────────────────
+function StatItem({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="text-center px-10">
+      <p className="font-body font-medium uppercase mb-1.5"
+        style={{ fontSize: 10, letterSpacing: "0.25em", color: "var(--text-3)" }}>
+        {label}
+      </p>
+      <p className="font-body font-bold tabular-nums leading-none"
+        style={{ fontSize: "2rem", color: accent ? "var(--gold)" : "var(--text-2)" }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ── Table column definitions — full static classes for Tailwind scanner ──
+const COLS = [
+  { label: "#",            cls: "text-left   pl-7 pr-3 w-20" },
+  { label: "Vendedor",     cls: "text-left   px-4" },
+  { label: "Repasse",      cls: "text-right  px-4 w-56" },
+  { label: "Vendas",       cls: "text-center px-4 w-36" },
+  { label: "Última Venda", cls: "text-center px-4 w-48" },
+] as const;
 
 export default function TVPage() {
-  const [ranking, setRanking] = useState<RankingEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [mensalRanking, setMensalRanking] = useState<RankingEntry[]>([]);
+  const [anualRanking,  setAnualRanking]  = useState<RankingEntry[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState<string | null>(null);
+  const [updatedAt,     setUpdatedAt]     = useState<string | null>(null);
+  const [activeView,    setActiveView]    = useState<View>("mensal");
+  const [transitioning, setTransitioning] = useState(false);
+  const [spotlightRow,  setSpotlightRow]  = useState(0);
 
   const mesAtual = MESES[new Date().getMonth() + 1];
+  const ranking  = activeView === "mensal" ? mensalRanking : anualRanking;
+  const hasAnual = anualRanking.length > 0;
+  const hasBoth  = mensalRanking.length > 0 && hasAnual;
 
   const fetchRanking = useCallback(async () => {
-    if (!JSON_URL) {
-      setError("URL da planilha não configurada. Defina NEXT_PUBLIC_SHEETS_JSON_URL no .env.local");
-      setLoading(false);
-      return;
-    }
     try {
-      const data = await fetchRankingFromSheets(JSON_URL);
-      setRanking(data);
+      const res = await fetch("/api/rankings");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Erro HTTP ${res.status}`);
+      }
+      const { mensal, anual } = await res.json();
+      setMensalRanking(mensal ?? []);
+      setAnualRanking(anual ?? []);
       setUpdatedAt(new Date().toISOString());
       setError(null);
     } catch (e: any) {
@@ -37,174 +137,329 @@ export default function TVPage() {
 
   useEffect(() => {
     fetchRanking();
-    const interval = setInterval(fetchRanking, REFRESH_INTERVAL);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchRanking, REFRESH_INTERVAL);
+    return () => clearInterval(iv);
   }, [fetchRanking]);
 
+  useEffect(() => {
+    if (!hasBoth) return;
+    const iv = setInterval(() => {
+      setTransitioning(true);
+      setTimeout(() => {
+        setActiveView(v => v === "mensal" ? "anual" : "mensal");
+        setTransitioning(false);
+      }, TRANSITION_MS);
+    }, CAROUSEL_INTERVAL);
+    return () => clearInterval(iv);
+  }, [hasBoth]);
+
+  useEffect(() => {
+    if (ranking.length === 0) return;
+    const iv = setInterval(() => setSpotlightRow(p => (p + 1) % ranking.length), SPOTLIGHT_INTERVAL);
+    return () => clearInterval(iv);
+  }, [ranking.length]);
+
   const totalRepasse = ranking.reduce((s, r) => s + r.total_repasse, 0);
-  const totalVendas = ranking.reduce((s, r) => s + r.qtd_vendas, 0);
+  const totalVendas  = ranking.reduce((s, r) => s + r.qtd_vendas, 0);
+  const animRepasse  = useCountUp(totalRepasse);
+  const animVendas   = useCountUp(totalVendas, 900);
+
   const time = updatedAt
-    ? new Date(updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    ? new Date(updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
     : null;
 
   const fmt = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
 
-  const medals = ["🥇", "🥈", "🥉"];
+  const podium = ranking.slice(0, 3);
+  const podiumCols =
+    podium.length === 1 ? "grid-cols-1 max-w-xs" :
+    podium.length === 2 ? "grid-cols-2 max-w-2xl" :
+    "grid-cols-3 max-w-5xl";
 
   return (
-    <div className="relative min-h-screen bg-forest-900 noise-overlay overflow-hidden">
-      {/* Glows */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-comprec-400/[0.06] rounded-full blur-3xl pointer-events-none translate-x-1/4 -translate-y-1/4" />
-      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-comprec-400/[0.04] rounded-full blur-3xl pointer-events-none -translate-x-1/4 translate-y-1/4" />
-      <div className="absolute inset-0 grid-pattern pointer-events-none" />
+    <div className="grain relative min-h-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
 
-      <div className="relative z-10 max-w-[1320px] mx-auto px-8 lg:px-10 py-7 h-screen flex flex-col">
-        {/* Header */}
-        <header className="flex items-center justify-between pb-6 border-b border-white/10 mb-8 flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <Image src="/images/logoWhite.png" alt="Comprec" width={44} height={44} className="h-11 w-auto" priority />
-            <div className="hidden sm:block">
-              <Image src="/images/logoNomeWhite.png" alt="Comprec" width={160} height={32} className="h-7 w-auto" priority />
-              <p className="text-[9px] font-semibold uppercase tracking-extra-wide text-comprec-400/40 mt-1">Gestão de Ativos Judiciais</p>
+      {/* ── Background atmosphere ──────────────────────── */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden>
+        {/* Top teal glow — brand presence */}
+        <div style={{ background: "radial-gradient(ellipse 120% 45% at 50% -5%, rgba(72,186,184,0.07) 0%, transparent 60%)" }}
+          className="absolute inset-0" />
+        {/* Bottom-right gold whisper — awards warmth */}
+        <div style={{ background: "radial-gradient(ellipse 55% 40% at 90% 95%, rgba(200,160,64,0.04) 0%, transparent 60%)" }}
+          className="absolute inset-0" />
+        {/* Bottom-left teal echo */}
+        <div style={{ background: "radial-gradient(ellipse 45% 35% at 10% 95%, rgba(72,186,184,0.03) 0%, transparent 55%)" }}
+          className="absolute inset-0" />
+        {/* Vignette */}
+        <div style={{ background: "radial-gradient(ellipse 100% 100% at 50% 50%, transparent 55%, rgba(0,0,0,0.35) 100%)" }}
+          className="absolute inset-0" />
+      </div>
+
+      <div className="relative z-10 max-w-[1600px] mx-auto px-14 py-7 h-screen flex flex-col">
+
+        {/* ── Header ──────────────────────────────────── */}
+        <header className="flex-shrink-0 text-center mb-5">
+
+          {/* Logo + live indicator */}
+          <div className="flex items-center justify-center gap-5 mb-5">
+            <div className="rule-teal" style={{ flex: 1, maxWidth: 120 }} />
+            <div className="flex items-center gap-4">
+              <Image
+                src="/images/logoNomeWhite.png"
+                alt="Comprec"
+                width={110} height={22}
+                className="h-5 w-auto opacity-60"
+                priority
+              />
+              <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.12)" }} />
+              <div className="flex items-center gap-2">
+                <span className="relative flex" style={{ width: 5, height: 5 }}>
+                  <span className="animate-ping absolute inline-flex rounded-full w-full h-full opacity-55"
+                    style={{ background: "var(--teal)" }} />
+                  <span className="relative inline-flex rounded-full w-full h-full"
+                    style={{ background: "var(--teal)" }} />
+                </span>
+                <span className="font-body font-medium uppercase"
+                  style={{ fontSize: 9, letterSpacing: "0.3em", color: "rgba(72,186,184,0.5)" }}>
+                  Ao Vivo{time ? ` · ${time}` : ""}
+                </span>
+              </div>
             </div>
+            <div className="rule-teal" style={{ flex: 1, maxWidth: 120 }} />
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="inline-flex items-center gap-2 bg-comprec-400/10 border border-comprec-400/20 px-4 py-1.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-comprec-400 animate-pulse" />
-              <span className="text-[10px] font-semibold uppercase tracking-extra-wide text-comprec-400">{mesAtual} — Ao Vivo</span>
+
+          {/* Main title — Cormorant Garamond italic */}
+          <h1
+            className="font-display italic leading-none mb-5"
+            style={{ fontSize: "clamp(3.5rem, 5.2vw, 5rem)", fontWeight: 700, letterSpacing: "-0.015em", color: "var(--text)" }}>
+            Ranking de Vendedores
+          </h1>
+
+          {/* Gold rule */}
+          <div className="rule-gold mx-auto mb-5" style={{ width: 80 }} />
+
+          {/* Period selector — underline tabs */}
+          {!loading && (
+            <div className="flex items-center justify-center">
+              {(["mensal", "anual"] as View[]).map((v, i) => {
+                const disabled = v === "anual" && !hasAnual;
+                const isActive = activeView === v;
+                return (
+                  <button
+                    key={v}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (disabled) return;
+                      setTransitioning(true);
+                      setTimeout(() => { setActiveView(v); setTransitioning(false); }, TRANSITION_MS);
+                    }}
+                    className="font-body font-semibold uppercase transition-all duration-300"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.22em",
+                      padding: "8px 28px",
+                      color:        isActive  ? "#ffffff"      : disabled ? "var(--text-4)" : "var(--text-3)",
+                      borderBottom: isActive  ? `1px solid rgba(72,186,184,0.6)` : "1px solid transparent",
+                      borderLeft:   i > 0     ? "1px solid var(--border)" : "none",
+                      cursor:       disabled  ? "not-allowed" : "pointer",
+                    }}>
+                    {v === "mensal" ? `Mês · ${mesAtual}` : "Ano"}
+                    {disabled && <span className="ml-2 font-normal normal-case tracking-normal opacity-40 text-xs">sem dados</span>}
+                  </button>
+                );
+              })}
             </div>
-            <span className="text-[11px] text-white/25">{time ? `Atualizado: ${time}` : "Conectando..."}</span>
-          </div>
+          )}
         </header>
 
-        {/* Title */}
-        <div className="text-center mb-5 flex-shrink-0">
-          <span className="inline-block text-comprec-400/60 text-[10px] font-bold uppercase tracking-extra-wide mb-2">Performance da Equipe</span>
-          <h2 className="font-display text-3xl lg:text-4xl text-white">Ranking de Vendedores</h2>
-          <div className="mx-auto mt-4 accent-line" />
+        {/* ── Body — fades between mensal/anual ──────── */}
+        <div className={`flex-1 flex flex-col min-h-0 transition-opacity duration-[400ms] ${transitioning ? "opacity-0" : "opacity-100"}`}>
+
+          {/* ── Stats strip ────────────────────────────── */}
+          {!loading && ranking.length > 0 && (
+            <div className="flex items-center justify-center mb-5 flex-shrink-0">
+              <StatItem label="Vendedores"      value={String(ranking.length)} />
+              <div style={{ width: 1, height: 28, background: "var(--border-hi)", margin: "0 4px" }} />
+              <StatItem label="Total de Vendas" value={String(animVendas)} />
+              <div style={{ width: 1, height: 28, background: "var(--border-hi)", margin: "0 4px" }} />
+              <StatItem label="Repasse Total"   value={fmt(animRepasse)} accent />
+            </div>
+          )}
+
+          {/* ── Podium ─────────────────────────────────── */}
+          {!loading && podium.length > 0 && (
+            <div
+              className={`grid gap-px mb-5 flex-shrink-0 mx-auto w-full ${podiumCols}`}
+              style={{ background: "var(--border)", overflow: "hidden" }}>
+              {podium.map((entry, i) => {
+                const t       = RANK[i];
+                const isFirst = i === 0;
+                return (
+                  <div
+                    key={entry.nome}
+                    className={`relative overflow-hidden text-center podium-enter ${isFirst ? "podium-first" : ""}`}
+                    style={{
+                      padding:        isFirst ? "32px 32px 36px" : "24px 28px 28px",
+                      background:     `linear-gradient(170deg, ${t.surface} 0%, var(--bg) 70%)`,
+                      borderTop:      `2px solid ${t.border}`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}>
+
+                    {/* Roman numeral watermark */}
+                    <span
+                      className="absolute font-display italic select-none pointer-events-none"
+                      style={{
+                        fontSize: 190, lineHeight: 1, fontWeight: 600,
+                        color: `${t.color}0A`,
+                        bottom: -18, right: -6, zIndex: 0,
+                      }}>
+                      {t.roman}
+                    </span>
+
+                    <div className="relative" style={{ zIndex: 1 }}>
+                      {/* Rank label */}
+                      <p className="font-body font-semibold uppercase mb-4"
+                        style={{ fontSize: 9, letterSpacing: "0.45em", color: t.dim }}>
+                        {i + 1}º Lugar
+                      </p>
+
+                      <PodiumAvatar nome={entry.nome} foto={entry.foto} rankIdx={i} />
+
+                      {/* Name */}
+                      <p className="font-body font-semibold leading-tight mb-2"
+                        style={{ fontSize: isFirst ? "1.35rem" : "1.2rem", color: "var(--text)" }}>
+                        {entry.nome}
+                      </p>
+
+                      {/* Value — Cormorant Garamond italic, rank color */}
+                      <p className="font-display italic"
+                        style={{ fontSize: isFirst ? "2.1rem" : "1.85rem", fontWeight: 700, color: t.color, lineHeight: 1.1 }}>
+                        {fmt(entry.total_repasse)}
+                      </p>
+
+                      {/* Sales count */}
+                      <p className="font-body mt-2"
+                        style={{ fontSize: 12, color: t.dim }}>
+                        {entry.qtd_vendas} {entry.qtd_vendas === 1 ? "venda" : "vendas"}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Table ──────────────────────────────────── */}
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-10 h-10 rounded-full animate-spin"
+                  style={{ border: "1px solid rgba(72,186,184,0.15)", borderTopColor: "rgba(72,186,184,0.65)" }} />
+                <span className="font-body font-medium uppercase"
+                  style={{ fontSize: 10, letterSpacing: "0.28em", color: "var(--text-3)" }}>
+                  Carregando
+                </span>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="font-body text-sm text-center max-w-md" style={{ color: "rgba(248,113,113,0.6)" }}>
+                {error}
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-hidden relative min-h-0">
+              {/* Bottom fade */}
+              <div className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-10"
+                style={{ background: "linear-gradient(to top, #020D0B, transparent)" }} />
+
+              <table className="w-full">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--border-hi)" }}>
+                    {COLS.map(col => (
+                      <th key={col.label}
+                        className={`font-body font-semibold uppercase pb-3 ${col.cls}`}
+                        style={{ fontSize: 10, letterSpacing: "0.22em", color: "var(--text-3)" }}>
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranking.map((entry, i) => {
+                    const rank      = RANK[i];
+                    const isFirst   = i === 0;
+                    const isTop3    = i < 3;
+                    const isSpotlit = spotlightRow === i;
+
+                    return (
+                      <tr
+                        key={entry.nome}
+                        className={`row-animate transition-colors duration-500 ${isSpotlit ? "row-lit" : ""}`}
+                        style={{ borderBottom: "1px solid var(--border)", animationDelay: `${i * 0.05}s` }}>
+
+                        {/* Position */}
+                        <td className="py-3.5 pl-7 pr-3">
+                          <span
+                            className={`font-body font-bold tabular-nums ${isFirst ? "shimmer-gold" : ""}`}
+                            style={{ fontSize: "1.5rem", color: isTop3 ? rank.color : "var(--text-4)" }}>
+                            {i + 1}
+                          </span>
+                        </td>
+
+                        {/* Name */}
+                        <td className="py-3.5 px-4">
+                          <span className="font-body font-semibold"
+                            style={{ fontSize: "1.25rem", color: isFirst ? "var(--gold)" : "var(--text)" }}>
+                            {entry.nome}
+                          </span>
+                        </td>
+
+                        {/* Repasse */}
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="font-body font-semibold tabular-nums"
+                            style={{
+                              fontSize: "1.25rem",
+                              color: isFirst ? "var(--gold)" : isSpotlit ? "rgba(200,160,64,0.65)" : "var(--text-2)",
+                            }}>
+                            {fmt(entry.total_repasse)}
+                          </span>
+                        </td>
+
+                        {/* Vendas */}
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="font-body tabular-nums"
+                            style={{ fontSize: "1.25rem", color: "var(--text-2)" }}>
+                            {entry.qtd_vendas}
+                          </span>
+                        </td>
+
+                        {/* Data */}
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="font-body tabular-nums"
+                            style={{ fontSize: "1.15rem", color: "var(--text-3)" }}>
+                            {entry.ultima_venda}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        {/* Stats bar */}
-        {!loading && ranking.length > 0 && (
-          <div className="flex items-center justify-center gap-8 mb-5 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-extra-wide text-white/25">Vendedores</span>
-              <span className="text-sm font-bold text-white/60 tabular-nums">{ranking.length}</span>
-            </div>
-            <div className="w-px h-4 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-extra-wide text-white/25">Total Vendas</span>
-              <span className="text-sm font-bold text-white/60 tabular-nums">{totalVendas}</span>
-            </div>
-            <div className="w-px h-4 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-extra-wide text-white/25">Repasse Geral</span>
-              <span className="text-sm font-bold text-comprec-400 tabular-nums">{fmt(totalRepasse)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Podium Top 3 */}
-        {!loading && ranking.length >= 3 && (
-          <div className="grid grid-cols-3 gap-px bg-white/10 border border-white/10 rounded-2xl overflow-hidden mb-6 flex-shrink-0 max-w-4xl mx-auto w-full">
-            {ranking.slice(0, 3).map((entry, i) => (
-              <div key={entry.nome} className="bg-forest-900 p-5 lg:p-6 text-center transition-colors duration-300 hover:bg-white/[0.04]">
-                <span className="text-[10px] font-bold uppercase tracking-extra-wide text-white/25 block mb-3">{i + 1}º Lugar</span>
-                <span className="text-3xl block mb-2">{medals[i]}</span>
-                <p className={`font-semibold text-sm mb-1 ${i === 0 ? "text-comprec-400" : "text-white/80"}`}>{entry.nome}</p>
-                <p className={`text-base font-bold tabular-nums ${i === 0 ? "text-comprec-400" : "text-white/60"}`}>{fmt(entry.total_repasse)}</p>
-                <p className="text-white/30 text-[11px] mt-1 tabular-nums">{entry.qtd_vendas} {entry.qtd_vendas === 1 ? "venda" : "vendas"}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Table / States */}
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-8 h-8 border-2 border-comprec-400 border-t-transparent rounded-full animate-spin" />
-              <span className="text-white/25 text-[10px] font-bold uppercase tracking-extra-wide">Carregando ranking...</span>
-            </div>
-          </div>
-        ) : error ? (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-red-400/70 text-sm text-center max-w-sm">{error}</p>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-auto relative">
-            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-forest-900 to-transparent pointer-events-none z-10" />
-            <table className="w-full border-separate" style={{ borderSpacing: "0 5px" }}>
-              <thead>
-                <tr>
-                  {["#", "Vendedor", "Total Repasse", "Qtd. Vendas", "Última Venda"].map((h, i) => (
-                    <th
-                      key={h}
-                      className={`text-[10px] font-bold uppercase tracking-extra-wide text-white/30 py-3 px-4 font-body sticky top-0 bg-forest-900 z-10 ${i <= 1 ? "text-left" : "text-center"} ${i === 0 ? "w-[70px]" : i === 2 ? "w-[180px]" : i === 3 ? "w-[140px]" : i === 4 ? "w-[130px]" : ""}`}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ranking.map((entry, i) => {
-                  const isTop1 = i === 0, isTop2 = i === 1, isTop3 = i === 2;
-                  const rowBg = isTop1
-                    ? "bg-comprec-400/[0.08] border-comprec-400/25"
-                    : isTop2
-                    ? "bg-white/[0.04] border-white/10"
-                    : isTop3
-                    ? "bg-white/[0.03] border-white/[0.08]"
-                    : "bg-white/[0.015] border-white/[0.04] hover:bg-white/[0.04]";
-                  const posBadge = isTop1
-                    ? "bg-comprec-400 text-forest-900 shadow-[0_2px_14px_rgba(72,186,184,0.35)] font-bold"
-                    : isTop2
-                    ? "bg-white/20 text-white font-bold"
-                    : isTop3
-                    ? "bg-white/10 text-white/80 font-bold"
-                    : "bg-white/[0.04] text-white/25 border border-white/[0.06]";
-                  return (
-                    <tr key={entry.nome} className={`row-animate border ${rowBg} transition-all duration-300`} style={{ animationDelay: `${i * 0.07}s` }}>
-                      <td className="py-4 px-5 rounded-l-xl">
-                        <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg text-sm ${posBadge}`}>{i + 1}</span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={`font-semibold text-[15px] ${isTop1 ? "text-comprec-400" : "text-white"}`}>{entry.nome}</span>
-                        {i < 3 && <span className="ml-2 text-lg">{medals[i]}</span>}
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span className={`font-bold text-[15px] tabular-nums ${isTop1 ? "text-comprec-400" : "text-white/80"}`}>{fmt(entry.total_repasse)}</span>
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span className="font-semibold text-[15px] text-white/70 tabular-nums">{entry.qtd_vendas}</span>
-                        <span className="text-[10px] text-white/30 uppercase ml-1">{entry.qtd_vendas === 1 ? "venda" : "vendas"}</span>
-                      </td>
-                      <td className="py-4 px-5 rounded-r-xl text-center">
-                        <span className="text-sm text-white/40 tabular-nums">{entry.ultima_venda}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Footer */}
-        <footer className="flex-shrink-0 border-t border-white/10 pt-4 mt-3">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <Image src="/images/logoNomeWhite.png" alt="Comprec" width={90} height={18} className="opacity-20 h-3.5 w-auto" />
-              <span className="text-white/20 text-[11px]">© {new Date().getFullYear()} Comprec — Gestão de Ativos Judiciais</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] text-white/25">Atualiza a cada {REFRESH_INTERVAL / 1000}s</span>
-            </div>
-          </div>
+        {/* ── Footer ──────────────────────────────────── */}
+        <footer className="flex-shrink-0 pt-3 flex items-center justify-center gap-2.5">
+          <span className="inline-block rounded-full animate-pulse"
+            style={{ width: 6, height: 6, background: "#34D399" }} />
+          <span className="font-body" style={{ fontSize: 11, color: "var(--text-4)" }}>
+            Atualiza a cada {REFRESH_INTERVAL / 1000}s
+          </span>
         </footer>
+
       </div>
     </div>
   );

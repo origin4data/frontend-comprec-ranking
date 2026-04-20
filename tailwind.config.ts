@@ -4,10 +4,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        comprec: { 50: "#eefbfb", 100: "#d5f4f3", 400: "#48BAB8", 500: "#3aa09e", 600: "#2d8583", 700: "#266b6a" },
-        forest: { 800: "#0B5348", 900: "#06302a" },
+        comprec: { 400: "#48BAB8", 500: "#3aa09e" },
+        forest:  { 900: "#050D0B", 800: "#0C1815" },
+        ink:     { 900: "#050D0B", 800: "#0C1815", 700: "#111D19" },
+        gold:    { DEFAULT: "#C49A2C", light: "#D4B058", dim: "rgba(196,154,44,0.12)" },
+        silver:  { DEFAULT: "#8E9FAB" },
+        bronze:  { DEFAULT: "#9A6040" },
+        parchment: "#E4ECE4",
       },
-      fontFamily: { display: ["var(--font-display)", "serif"], body: ["var(--font-body)", "sans-serif"] },
+      fontFamily: {
+        display: ["var(--font-display)", "Georgia", "serif"],
+        body:    ["var(--font-body)", "Arial", "sans-serif"],
+      },
       letterSpacing: { "extra-wide": "0.15em" },
     },
   },
