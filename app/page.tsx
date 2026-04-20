@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
 import { RankingEntry } from "@/lib/types";
 
-const REFRESH_INTERVAL   = 15_000;
-const CAROUSEL_INTERVAL  = 10_000;
-const TRANSITION_MS      = 400;
-const SPOTLIGHT_INTERVAL = 3_200;
+const REFRESH_INTERVAL    = 15_000;
+const CAROUSEL_INTERVAL   = 10_000;
+const TRANSITION_MS       = 400;
+const TABLE_PAGE_SIZE     = 5;
+const TABLE_PAGE_INTERVAL = 6_000;
 
 const MESES = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
@@ -109,7 +110,7 @@ export default function TVPage() {
   const [updatedAt,     setUpdatedAt]     = useState<string | null>(null);
   const [activeView,    setActiveView]    = useState<View>("mensal");
   const [transitioning, setTransitioning] = useState(false);
-  const [spotlightRow,  setSpotlightRow]  = useState(0);
+  const [tablePageIdx,  setTablePageIdx]  = useState(0);
 
   const mesAtual = MESES[new Date().getMonth() + 1];
   const ranking  = activeView === "mensal" ? mensalRanking : anualRanking;
@@ -153,11 +154,20 @@ export default function TVPage() {
     return () => clearInterval(iv);
   }, [hasBoth]);
 
+  // Reset table page when view (mensal/anual) changes
+  useEffect(() => { setTablePageIdx(0); }, [activeView]);
+
+  // Table excludes top 3 (already in podium) and paginates in groups of TABLE_PAGE_SIZE
+  const tableEntries = ranking.slice(3);
+  const totalPages   = Math.max(1, Math.ceil(tableEntries.length / TABLE_PAGE_SIZE));
+  const pageEntries  = tableEntries.slice(tablePageIdx * TABLE_PAGE_SIZE, (tablePageIdx + 1) * TABLE_PAGE_SIZE);
+
+  // Auto-rotate table pages
   useEffect(() => {
-    if (ranking.length === 0) return;
-    const iv = setInterval(() => setSpotlightRow(p => (p + 1) % ranking.length), SPOTLIGHT_INTERVAL);
+    if (totalPages <= 1) return;
+    const iv = setInterval(() => setTablePageIdx(p => (p + 1) % totalPages), TABLE_PAGE_INTERVAL);
     return () => clearInterval(iv);
-  }, [ranking.length]);
+  }, [totalPages]);
 
   const totalRepasse = ranking.reduce((s, r) => s + r.total_repasse, 0);
   const totalVendas  = ranking.reduce((s, r) => s + r.qtd_vendas, 0);
@@ -386,32 +396,26 @@ export default function TVPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {ranking.map((entry, i) => {
-                    const rank      = RANK[i];
-                    const isFirst   = i === 0;
-                    const isTop3    = i < 3;
-                    const isSpotlit = spotlightRow === i;
-
-                    return (
+                <tbody key={`${activeView}-${tablePageIdx}`}>
+                  {pageEntries.map((entry, i) => (
                       <tr
                         key={entry.nome}
-                        className={`row-animate transition-colors duration-500 ${isSpotlit ? "row-lit" : ""}`}
+                        className="row-animate"
                         style={{ borderBottom: "1px solid var(--border)", animationDelay: `${i * 0.05}s` }}>
 
                         {/* Position */}
                         <td className="py-3.5 pl-7 pr-3">
                           <span
-                            className={`font-body font-bold tabular-nums ${isFirst ? "shimmer-gold" : ""}`}
-                            style={{ fontSize: "1.5rem", color: isTop3 ? rank.color : "var(--text-4)" }}>
-                            {i + 1}
+                            className="font-body font-bold tabular-nums"
+                            style={{ fontSize: "1.5rem", color: "var(--text-4)" }}>
+                            {entry.pos}
                           </span>
                         </td>
 
                         {/* Name */}
                         <td className="py-3.5 px-4">
                           <span className="font-body font-semibold"
-                            style={{ fontSize: "1.25rem", color: isFirst ? "var(--gold)" : "var(--text)" }}>
+                            style={{ fontSize: "1.25rem", color: "var(--text)" }}>
                             {entry.nome}
                           </span>
                         </td>
@@ -419,10 +423,7 @@ export default function TVPage() {
                         {/* Repasse */}
                         <td className="py-3.5 px-4 text-right">
                           <span className="font-body font-semibold tabular-nums"
-                            style={{
-                              fontSize: "1.25rem",
-                              color: isFirst ? "var(--gold)" : isSpotlit ? "rgba(200,160,64,0.65)" : "var(--text-2)",
-                            }}>
+                            style={{ fontSize: "1.25rem", color: "var(--text-2)" }}>
                             {fmt(entry.total_repasse)}
                           </span>
                         </td>
@@ -443,8 +444,7 @@ export default function TVPage() {
                           </span>
                         </td>
                       </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
