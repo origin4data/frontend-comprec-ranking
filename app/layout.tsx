@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Playfair_Display, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 
@@ -22,10 +22,19 @@ export const metadata: Metadata = {
   description: "Ranking de vendas — Comprec Gestão de Ativos Judiciais",
 };
 
+// Painel de TV: escala 1:1 e sem zoom — a tela é o próprio viewport
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#0B5348",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={`${fontDisplay.variable} ${fontBody.variable}`}>
-      <body className="min-h-screen">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
