@@ -9,7 +9,7 @@ Painel de ranking de vendas com painel admin protegido por login.
 
 | Rota | Descrição |
 |------|-----------|
-| `/` | Ranking público para TV (fundo escuro, auto-refresh + realtime) |
+| `/` | Ranking público para TV **em pé / retrato** (auto-refresh + realtime) |
 | `/login` | Login do administrador |
 | `/admin` | Painel admin: ranking, registrar vendas, gerenciar funcionários |
 
@@ -65,6 +65,45 @@ npm run dev
 npm run build && npm start
 # Abra no Chrome da TV → F11 (tela cheia)
 ```
+
+---
+
+## TV de 56" em pé (retrato)
+
+O painel foi desenhado para uma TV **na vertical**, resolução **1080 × 1920**.
+
+### Configurar a TV
+
+1. Gire a TV fisicamente para o modo retrato
+2. No Windows do mini-PC/box: **Configurações > Sistema > Vídeo > Orientação da tela → Retrato**
+   (no Linux: `xrandr --output HDMI-1 --rotate left`)
+3. Confirme que a resolução ficou **1080 × 1920**
+4. Abra o Chrome na URL do painel e pressione **F11** (tela cheia)
+
+Para deixar em quiosque (abre já em tela cheia, sem barras):
+
+```bash
+chrome.exe --kiosk --noerrdialogs --disable-infobars http://SEU-HOST/
+```
+
+### Como a escala funciona
+
+Todos os tamanhos vivem em variáveis CSS no bloco `@media (orientation: portrait)`
+de `app/globals.css` e são definidos em `vmin`. Consequências práticas:
+
+- **Escala sozinho** — a mesma tela serve 1080×1920 (Full HD) e 2160×3840 (4K),
+  sem tocar em nenhum componente
+- **Ajuste fino num lugar só** — quer o nome do 1º lugar maior? mude `--fs-name-1`
+- **Fallback em paisagem** — aberto num monitor comum, o layout de 3 colunas
+  original continua valendo (bloco `:root` padrão)
+
+### O que muda em pé vs. deitado
+
+| | Paisagem | Retrato (TV em pé) |
+|---|---|---|
+| Pódio | 3 colunas lado a lado | 1º lugar em destaque de largura total + 2º/3º embaixo |
+| Linhas na tabela | 5 por página | 8 por página |
+| Tipografia | fixa em px | escalona em `vmin` |
 
 ---
 
