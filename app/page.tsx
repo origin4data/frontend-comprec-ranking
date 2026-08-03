@@ -7,8 +7,11 @@ import { RankingEntry } from "@/lib/types";
 const REFRESH_INTERVAL    = 15_000;
 const CAROUSEL_INTERVAL   = 22_000;
 const TRANSITION_MS       = 400;
-const TABLE_PAGE_SIZE     = 5;
 const TABLE_PAGE_INTERVAL = 6_000;
+
+// A TV em pé tem muito mais altura útil — cabe quase o dobro de linhas
+const TABLE_PAGE_PORTRAIT  = 8;
+const TABLE_PAGE_LANDSCAPE = 5;
 
 const MESES = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
@@ -49,13 +52,27 @@ function useCountUp(target: number, duration = 1200) {
   return value;
 }
 
+// Retrato é o alvo (TV em pé) — inicia em true para o SSR bater com o 1º render
+function useIsPortrait() {
+  const [portrait, setPortrait] = useState(true);
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait)");
+    const update = () => setPortrait(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return portrait;
+}
+
 type View = "mensal" | "anual";
 
 // ── Avatar component ──────────────────────────────────────────
-function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; rankIdx: number }) {
+function PodiumAvatar({
+  nome, foto, rankIdx, size, className = "",
+}: { nome: string; foto?: string; rankIdx: number; size: string; className?: string }) {
   const t        = RANK[rankIdx] ?? RANK[2];
   const isFirst  = rankIdx === 0;
-  const size     = isFirst ? 220 : 168;
   const initials = nome.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
   const [imgFailed, setImgFailed] = useState(false);
 
@@ -69,17 +86,17 @@ function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; ra
 
   return showFallback ? (
     <div
-      className="mx-auto mb-5 rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0"
-      style={{ ...ring, background: t.surface, color: t.color, fontSize: isFirst ? 48 : 38, letterSpacing: "0.07em" }}>
+      className={`rounded-full flex items-center justify-center font-body font-semibold flex-shrink-0 ${className}`}
+      style={{ ...ring, background: t.surface, color: t.color, fontSize: `calc(${size} * 0.3)`, letterSpacing: "0.07em" }}>
       {initials}
     </div>
   ) : (
-    <div className="mx-auto mb-5 rounded-full overflow-hidden flex-shrink-0 relative" style={ring}>
+    <div className={`rounded-full overflow-hidden flex-shrink-0 relative ${className}`} style={ring}>
       <Image
         src={foto!}
         alt={nome}
         fill
-        sizes={`${size}px`}
+        sizes={size}
         quality={92}
         className="object-cover"
         unoptimized
@@ -92,27 +109,114 @@ function PodiumAvatar({ nome, foto, rankIdx }: { nome: string; foto?: string; ra
 // ── Stats item ────────────────────────────────────────────────
 function StatItem({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="text-center px-10">
+    <div className="text-center" style={{ padding: "0 var(--stat-gap)" }}>
       <p className="font-body font-medium uppercase mb-1.5"
-        style={{ fontSize: 10, letterSpacing: "0.25em", color: "var(--text-3)" }}>
+        style={{ fontSize: "var(--fs-stat-label)", letterSpacing: "0.25em", color: "var(--text-3)" }}>
         {label}
       </p>
       <p className="font-body font-bold tabular-nums leading-none"
-        style={{ fontSize: "2rem", color: accent ? "var(--gold)" : "var(--text-2)" }}>
+        style={{ fontSize: "var(--fs-stat-value)", color: accent ? "var(--gold)" : "var(--text-2)" }}>
         {value}
       </p>
     </div>
   );
 }
 
-// ── Table column definitions — full static classes for Tailwind scanner ──
+// ── Podium card ───────────────────────────────────────────────
+// `layout` decide a forma: "hero"/"row" (TV em pé) ou "stack" (paisagem)
+function PodiumCard({
+  entry, rankIdx, layout, fmt,
+}: {
+  entry: RankingEntry;
+  rankIdx: number;
+  layout: "hero" | "row" | "stack";
+  fmt: (v: number) => string;
+}) {
+  const t         = RANK[rankIdx] ?? RANK[2];
+  const isFirst   = rankIdx === 0;
+  const horizontal = layout !== "stack";
+
+  const avatarSize = isFirst ? "var(--avatar-1)" : "var(--avatar-2)";
+  const nameSize   = isFirst ? "var(--fs-name-1)"  : "var(--fs-name-2)";
+  const valueSize  = isFirst ? "var(--fs-value-1)" : "var(--fs-value-2)";
+  const cardPad    = isFirst ? "var(--card-pad-1)" : "var(--card-pad-2)";
+
+  const info = (
+    <div className={horizontal ? "flex-1 min-w-0 text-left" : ""}>
+      <p className="font-body font-semibold uppercase"
+        style={{
+          fontSize: "var(--fs-rank-label)",
+          letterSpacing: "0.45em",
+          color: t.dim,
+          marginBottom: horizontal ? "0.8em" : "1.6em",
+        }}>
+        {rankIdx + 1}º Lugar
+      </p>
+
+      {!horizontal && (
+        <PodiumAvatar nome={entry.nome} foto={entry.foto} rankIdx={rankIdx}
+          size={avatarSize} className="mx-auto mb-5" />
+      )}
+
+      <p className="font-body font-semibold leading-tight mb-2 truncate"
+        style={{ fontSize: nameSize, color: "var(--text)" }}>
+        {entry.nome}
+      </p>
+
+      <p className="font-display italic"
+        style={{ fontSize: valueSize, fontWeight: 700, color: t.color, lineHeight: 1.1 }}>
+        {fmt(entry.total_repasse)}
+      </p>
+
+      <p className="font-body mt-2"
+        style={{ fontSize: "var(--fs-sales)", color: t.dim }}>
+        {entry.qtd_vendas} {entry.qtd_vendas === 1 ? "venda" : "vendas"}
+      </p>
+    </div>
+  );
+
+  return (
+    <div
+      className={`relative overflow-hidden podium-enter ${isFirst ? "podium-first" : ""} ${horizontal ? "" : "text-center"}`}
+      style={{
+        padding:        cardPad,
+        background:     `linear-gradient(${horizontal ? "100deg" : "170deg"}, ${t.surface} 0%, var(--bg) 70%)`,
+        borderTop:      `2px solid ${t.border}`,
+        animationDelay: `${rankIdx * 0.08}s`,
+      }}>
+
+      {/* Roman numeral watermark */}
+      <span
+        className="absolute font-display italic select-none pointer-events-none"
+        style={{
+          fontSize: "var(--roman-size)", lineHeight: 1, fontWeight: 600,
+          color: `${t.color}0A`,
+          bottom: "-0.1em", right: "-0.03em", zIndex: 0,
+        }}>
+        {t.roman}
+      </span>
+
+      {horizontal ? (
+        <div className="relative flex items-center" style={{ zIndex: 1, gap: cardPad }}>
+          <PodiumAvatar nome={entry.nome} foto={entry.foto} rankIdx={rankIdx} size={avatarSize} />
+          {info}
+        </div>
+      ) : (
+        <div className="relative" style={{ zIndex: 1 }}>{info}</div>
+      )}
+    </div>
+  );
+}
+
+// ── Table column definitions ──────────────────────────────────
+// Largura em % — o mesmo grid serve para 1080 de largura (em pé) e 1920 (deitado)
 const COLS = [
-  { label: "#",            cls: "text-left   pl-7 pr-3 w-20" },
-  { label: "Vendedor",     cls: "text-left   px-4" },
-  { label: "Repasse",      cls: "text-right  px-4 w-56" },
-  { label: "Vendas",       cls: "text-center px-4 w-36" },
-  { label: "Última Venda", cls: "text-center px-4 w-48" },
-] as const;
+  { label: "#",            align: "text-left"   as const, width: "8%"  },
+  { label: "Vendedor",     align: "text-left"   as const, width: "33%" },
+  { label: "Repasse",      align: "text-right"  as const, width: "21%" },
+  { label: "Vendas",       align: "text-center" as const, width: "13%" },
+  { label: "Última Venda", align: "text-center" as const, width: "25%" },
+];
 
 export default function TVPage() {
   const [mensalRanking, setMensalRanking] = useState<RankingEntry[]>([]);
@@ -123,6 +227,9 @@ export default function TVPage() {
   const [activeView,    setActiveView]    = useState<View>("mensal");
   const [transitioning, setTransitioning] = useState(false);
   const [tablePageIdx,  setTablePageIdx]  = useState(0);
+
+  const isPortrait = useIsPortrait();
+  const pageSize   = isPortrait ? TABLE_PAGE_PORTRAIT : TABLE_PAGE_LANDSCAPE;
 
   const mesAtual = MESES[new Date().getMonth() + 1];
   const ranking  = activeView === "mensal" ? mensalRanking : anualRanking;
@@ -172,13 +279,13 @@ export default function TVPage() {
     return () => clearInterval(iv);
   }, [hasBoth]);
 
-  // Reset table page when view (mensal/anual) changes
-  useEffect(() => { setTablePageIdx(0); }, [activeView]);
+  // Reset table page when view (mensal/anual) or page size changes
+  useEffect(() => { setTablePageIdx(0); }, [activeView, pageSize]);
 
-  // Table excludes top 3 (already in podium) and paginates in groups of TABLE_PAGE_SIZE
+  // Table excludes top 3 (already in podium) and paginates in groups of pageSize
   const tableEntries = ranking.slice(3);
-  const totalPages   = Math.max(1, Math.ceil(tableEntries.length / TABLE_PAGE_SIZE));
-  const pageEntries  = tableEntries.slice(tablePageIdx * TABLE_PAGE_SIZE, (tablePageIdx + 1) * TABLE_PAGE_SIZE);
+  const totalPages   = Math.max(1, Math.ceil(tableEntries.length / pageSize));
+  const pageEntries  = tableEntries.slice(tablePageIdx * pageSize, (tablePageIdx + 1) * pageSize);
 
   // Auto-rotate table pages
   useEffect(() => {
@@ -200,13 +307,14 @@ export default function TVPage() {
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
 
   const podium = ranking.slice(0, 3);
+  const runnersUp = podium.slice(1);
   const podiumCols =
     podium.length === 1 ? "grid-cols-1 max-w-xs" :
     podium.length === 2 ? "grid-cols-2 max-w-2xl" :
     "grid-cols-3 max-w-5xl";
 
   return (
-    <div className="grain relative min-h-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="grain tv-shell relative w-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
 
       {/* ── Background atmosphere ──────────────────────── */}
       <div className="absolute inset-0 pointer-events-none" aria-hidden>
@@ -224,48 +332,51 @@ export default function TVPage() {
           className="absolute inset-0" />
       </div>
 
-      <div className="relative z-10 max-w-[1600px] mx-auto px-14 py-7 h-screen flex flex-col">
+      <div
+        className="relative z-10 mx-auto w-full h-full flex flex-col"
+        style={{ maxWidth: isPortrait ? "none" : 1600, padding: "var(--pad-y) var(--pad-x)" }}>
 
         {/* ── Header ──────────────────────────────────── */}
-        <header className="flex-shrink-0 text-center mb-5">
+        <header className="flex-shrink-0 text-center" style={{ marginBottom: "var(--stack)" }}>
 
           {/* Logo + live indicator */}
-          <div className="flex items-center justify-center gap-5 mb-5">
-            <div className="rule-teal" style={{ flex: 1, maxWidth: 120 }} />
+          <div className="flex items-center justify-center gap-5" style={{ marginBottom: "var(--stack)" }}>
+            <div className="rule-teal" style={{ flex: 1, maxWidth: "var(--rule-w)" }} />
             <div className="flex items-center gap-4">
               <Image
                 src="/images/logoNomeWhite.png"
                 alt="Comprec"
-                width={110} height={22}
-                className="h-5 w-auto opacity-60"
+                width={220} height={44}
+                className="w-auto opacity-60"
+                style={{ height: "var(--logo-h)" }}
                 priority
               />
-              <div style={{ width: 1, height: 14, background: "rgba(255,255,255,0.12)" }} />
+              <div style={{ width: 1, height: "var(--logo-h)", background: "rgba(255,255,255,0.12)" }} />
               <div className="flex items-center gap-2">
-                <span className="relative flex" style={{ width: 5, height: 5 }}>
+                <span className="relative flex" style={{ width: "0.6em", height: "0.6em", fontSize: "var(--fs-live)" }}>
                   <span className="animate-ping absolute inline-flex rounded-full w-full h-full opacity-55"
                     style={{ background: "var(--teal)" }} />
                   <span className="relative inline-flex rounded-full w-full h-full"
                     style={{ background: "var(--teal)" }} />
                 </span>
                 <span className="font-body font-medium uppercase"
-                  style={{ fontSize: 9, letterSpacing: "0.3em", color: "rgba(72,186,184,0.5)" }}>
+                  style={{ fontSize: "var(--fs-live)", letterSpacing: "0.3em", color: "rgba(72,186,184,0.5)" }}>
                   Ao Vivo{time ? ` · ${time}` : ""}
                 </span>
               </div>
             </div>
-            <div className="rule-teal" style={{ flex: 1, maxWidth: 120 }} />
+            <div className="rule-teal" style={{ flex: 1, maxWidth: "var(--rule-w)" }} />
           </div>
 
-          {/* Main title — Cormorant Garamond italic */}
+          {/* Main title */}
           <h1
-            className="font-display italic leading-none mb-5"
-            style={{ fontSize: "clamp(3.5rem, 5.2vw, 5rem)", fontWeight: 700, letterSpacing: "-0.015em", color: "var(--text)" }}>
+            className="font-display italic leading-none"
+            style={{ fontSize: "var(--fs-title)", fontWeight: 700, letterSpacing: "-0.015em", color: "var(--text)", marginBottom: "var(--stack)" }}>
             Ranking de Vendedores
           </h1>
 
           {/* Gold rule */}
-          <div className="rule-gold mx-auto mb-5" style={{ width: 80 }} />
+          <div className="rule-gold mx-auto" style={{ width: "var(--rule-w)", marginBottom: "var(--stack)" }} />
 
           {/* Period selector — underline tabs */}
           {!loading && (
@@ -284,9 +395,9 @@ export default function TVPage() {
                     }}
                     className="font-body font-semibold uppercase transition-all duration-300"
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--fs-tab)",
                       letterSpacing: "0.22em",
-                      padding: "8px 28px",
+                      padding: "var(--tab-pad)",
                       color:        isActive  ? "#ffffff"      : disabled ? "var(--text-4)" : "var(--text-3)",
                       borderBottom: isActive  ? `1px solid rgba(72,186,184,0.6)` : "1px solid transparent",
                       borderLeft:   i > 0     ? "1px solid var(--border)" : "none",
@@ -306,76 +417,41 @@ export default function TVPage() {
 
           {/* ── Stats strip ────────────────────────────── */}
           {!loading && ranking.length > 0 && (
-            <div className="flex items-center justify-center mb-5 flex-shrink-0">
+            <div className="flex items-center justify-center flex-shrink-0" style={{ marginBottom: "var(--stack)" }}>
               <StatItem label="Vendedores"      value={String(ranking.length)} />
-              <div style={{ width: 1, height: 28, background: "var(--border-hi)", margin: "0 4px" }} />
+              <div style={{ width: 1, height: "1.6em", fontSize: "var(--fs-stat-value)", background: "var(--border-hi)" }} />
               <StatItem label="Total de Vendas" value={String(animVendas)} />
-              <div style={{ width: 1, height: 28, background: "var(--border-hi)", margin: "0 4px" }} />
+              <div style={{ width: 1, height: "1.6em", fontSize: "var(--fs-stat-value)", background: "var(--border-hi)" }} />
               <StatItem label="Repasse Total"   value={fmt(animRepasse)} accent />
             </div>
           )}
 
           {/* ── Podium ─────────────────────────────────── */}
           {!loading && podium.length > 0 && (
-            <div
-              className={`grid gap-px mb-5 flex-shrink-0 mx-auto w-full ${podiumCols}`}
-              style={{ background: "var(--border)", overflow: "hidden" }}>
-              {podium.map((entry, i) => {
-                const t       = RANK[i];
-                const isFirst = i === 0;
-                return (
-                  <div
-                    key={entry.nome}
-                    className={`relative overflow-hidden text-center podium-enter ${isFirst ? "podium-first" : ""}`}
-                    style={{
-                      padding:        isFirst ? "32px 32px 36px" : "24px 28px 28px",
-                      background:     `linear-gradient(170deg, ${t.surface} 0%, var(--bg) 70%)`,
-                      borderTop:      `2px solid ${t.border}`,
-                      animationDelay: `${i * 0.08}s`,
-                    }}>
-
-                    {/* Roman numeral watermark */}
-                    <span
-                      className="absolute font-display italic select-none pointer-events-none"
-                      style={{
-                        fontSize: 190, lineHeight: 1, fontWeight: 600,
-                        color: `${t.color}0A`,
-                        bottom: -18, right: -6, zIndex: 0,
-                      }}>
-                      {t.roman}
-                    </span>
-
-                    <div className="relative" style={{ zIndex: 1 }}>
-                      {/* Rank label */}
-                      <p className="font-body font-semibold uppercase mb-4"
-                        style={{ fontSize: 9, letterSpacing: "0.45em", color: t.dim }}>
-                        {i + 1}º Lugar
-                      </p>
-
-                      <PodiumAvatar nome={entry.nome} foto={entry.foto} rankIdx={i} />
-
-                      {/* Name */}
-                      <p className="font-body font-semibold leading-tight mb-2"
-                        style={{ fontSize: isFirst ? "1.35rem" : "1.2rem", color: "var(--text)" }}>
-                        {entry.nome}
-                      </p>
-
-                      {/* Value — Cormorant Garamond italic, rank color */}
-                      <p className="font-display italic"
-                        style={{ fontSize: isFirst ? "2.1rem" : "1.85rem", fontWeight: 700, color: t.color, lineHeight: 1.1 }}>
-                        {fmt(entry.total_repasse)}
-                      </p>
-
-                      {/* Sales count */}
-                      <p className="font-body mt-2"
-                        style={{ fontSize: 12, color: t.dim }}>
-                        {entry.qtd_vendas} {entry.qtd_vendas === 1 ? "venda" : "vendas"}
-                      </p>
-                    </div>
+            isPortrait ? (
+              /* TV em pé: 1º lugar em destaque de largura total, 2º e 3º lado a lado */
+              <div className="flex flex-col gap-px flex-shrink-0 w-full"
+                style={{ background: "var(--border)", marginBottom: "var(--stack)" }}>
+                <PodiumCard entry={podium[0]} rankIdx={0} layout="hero" fmt={fmt} />
+                {runnersUp.length > 0 && (
+                  <div className={`grid gap-px ${runnersUp.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+                    style={{ background: "var(--border)" }}>
+                    {runnersUp.map((entry, i) => (
+                      <PodiumCard key={entry.nome} entry={entry} rankIdx={i + 1} layout="row" fmt={fmt} />
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            ) : (
+              /* Paisagem: três colunas clássicas */
+              <div
+                className={`grid gap-px flex-shrink-0 mx-auto w-full ${podiumCols}`}
+                style={{ background: "var(--border)", overflow: "hidden", marginBottom: "var(--stack)" }}>
+                {podium.map((entry, i) => (
+                  <PodiumCard key={entry.nome} entry={entry} rankIdx={i} layout="stack" fmt={fmt} />
+                ))}
+              </div>
+            )
           )}
 
           {/* ── Table ──────────────────────────────────── */}
@@ -383,9 +459,9 @@ export default function TVPage() {
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-6">
                 <div className="rounded-full animate-spin"
-                  style={{ width: 64, height: 64, border: "3px solid rgba(72,186,184,0.18)", borderTopColor: "rgba(72,186,184,0.85)" }} />
+                  style={{ width: "3em", height: "3em", fontSize: "var(--fs-stat-value)", border: "3px solid rgba(72,186,184,0.18)", borderTopColor: "rgba(72,186,184,0.85)" }} />
                 <span className="font-body font-medium uppercase"
-                  style={{ fontSize: 22, letterSpacing: "0.28em", color: "var(--text-2)" }}>
+                  style={{ fontSize: "var(--fs-name-2)", letterSpacing: "0.28em", color: "var(--text-2)" }}>
                   Carregando
                 </span>
               </div>
@@ -394,10 +470,10 @@ export default function TVPage() {
             <div className="flex-1 flex items-center justify-center px-10">
               <div className="text-center max-w-3xl">
                 <p className="font-body font-semibold uppercase mb-4"
-                  style={{ fontSize: 14, letterSpacing: "0.3em", color: "rgba(248,113,113,0.85)" }}>
+                  style={{ fontSize: "var(--fs-tab)", letterSpacing: "0.3em", color: "rgba(248,113,113,0.85)" }}>
                   Erro ao carregar
                 </p>
-                <p className="font-body" style={{ fontSize: 22, color: "var(--text-2)", lineHeight: 1.4 }}>
+                <p className="font-body" style={{ fontSize: "var(--fs-name-2)", color: "var(--text-2)", lineHeight: 1.4 }}>
                   {error}
                 </p>
               </div>
@@ -405,70 +481,84 @@ export default function TVPage() {
           ) : (
             <div className="flex-1 overflow-hidden relative min-h-0">
               {/* Bottom fade */}
-              <div className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none z-10"
-                style={{ background: "linear-gradient(to top, var(--bg), transparent)" }} />
+              <div className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
+                style={{ height: "var(--stack)", background: "linear-gradient(to top, var(--bg), transparent)" }} />
 
-              <table className="w-full">
+              <table className="w-full" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  {COLS.map(col => <col key={col.label} style={{ width: col.width }} />)}
+                </colgroup>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border-hi)" }}>
-                    {COLS.map(col => (
+                    {COLS.map((col, i) => (
                       <th key={col.label}
-                        className={`font-body font-semibold uppercase pb-3 ${col.cls}`}
-                        style={{ fontSize: 10, letterSpacing: "0.22em", color: "var(--text-3)" }}>
+                        className={`font-body font-semibold uppercase whitespace-nowrap ${col.align}`}
+                        style={{
+                          fontSize: "var(--fs-th)", letterSpacing: "0.16em", color: "var(--text-3)",
+                          paddingBottom: "var(--row-py)",
+                          paddingLeft:  i === 0 ? "1.4em" : "0.6em",
+                          paddingRight: i === COLS.length - 1 ? "1.4em" : "0.6em",
+                        }}>
                         {col.label}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody key={`${activeView}-${tablePageIdx}`}>
-                  {pageEntries.map((entry, i) => (
+                  {pageEntries.map((entry, i) => {
+                    const cell = (extra: React.CSSProperties = {}): React.CSSProperties => ({
+                      paddingTop: "var(--row-py)", paddingBottom: "var(--row-py)",
+                      paddingLeft: "0.6em", paddingRight: "0.6em", ...extra,
+                    });
+                    return (
                       <tr
                         key={entry.nome}
                         className="row-animate"
                         style={{ borderBottom: "1px solid var(--border)", animationDelay: `${i * 0.05}s` }}>
 
                         {/* Position */}
-                        <td className="py-3.5 pl-7 pr-3">
+                        <td className="text-left" style={cell({ paddingLeft: "1.4em" })}>
                           <span
                             className="font-body font-bold tabular-nums"
-                            style={{ fontSize: "1.5rem", color: "var(--text-4)" }}>
+                            style={{ fontSize: "var(--fs-td-pos)", color: "var(--text-4)" }}>
                             {entry.pos}
                           </span>
                         </td>
 
                         {/* Name */}
-                        <td className="py-3.5 px-4">
-                          <span className="font-body font-semibold"
-                            style={{ fontSize: "1.25rem", color: "var(--text)" }}>
+                        <td className="text-left" style={cell()}>
+                          <span className="font-body font-semibold block truncate"
+                            style={{ fontSize: "var(--fs-td)", color: "var(--text)" }}>
                             {entry.nome}
                           </span>
                         </td>
 
                         {/* Repasse */}
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="text-right" style={cell()}>
                           <span className="font-body font-semibold tabular-nums"
-                            style={{ fontSize: "1.25rem", color: "var(--text-2)" }}>
+                            style={{ fontSize: "var(--fs-td)", color: "var(--text-2)" }}>
                             {fmt(entry.total_repasse)}
                           </span>
                         </td>
 
                         {/* Vendas */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="text-center" style={cell()}>
                           <span className="font-body tabular-nums"
-                            style={{ fontSize: "1.25rem", color: "var(--text-2)" }}>
+                            style={{ fontSize: "var(--fs-td)", color: "var(--text-2)" }}>
                             {entry.qtd_vendas}
                           </span>
                         </td>
 
                         {/* Data */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="text-center" style={cell({ paddingRight: "1.4em" })}>
                           <span className="font-body tabular-nums"
-                            style={{ fontSize: "1.15rem", color: "var(--text-3)" }}>
+                            style={{ fontSize: "var(--fs-td-date)", color: "var(--text-3)" }}>
                             {entry.ultima_venda}
                           </span>
                         </td>
                       </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -476,12 +566,31 @@ export default function TVPage() {
         </div>
 
         {/* ── Footer ──────────────────────────────────── */}
-        <footer className="flex-shrink-0 pt-3 flex items-center justify-center gap-2.5">
-          <span className="inline-block rounded-full animate-pulse"
-            style={{ width: 6, height: 6, background: "#34D399" }} />
-          <span className="font-body" style={{ fontSize: 11, color: "var(--text-4)" }}>
-            Atualiza a cada {REFRESH_INTERVAL / 1000}s
-          </span>
+        <footer className="flex-shrink-0 flex items-center justify-center gap-4"
+          style={{ paddingTop: "calc(var(--stack) * 0.6)" }}>
+
+          {/* Indicador de página da tabela */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              {Array.from({ length: totalPages }, (_, i) => (
+                <span key={i} className="rounded-full transition-all duration-500"
+                  style={{
+                    width: i === tablePageIdx ? "1.4em" : "0.5em", height: "0.5em",
+                    fontSize: "var(--fs-footer)",
+                    background: i === tablePageIdx ? "var(--teal)" : "var(--text-4)",
+                  }} />
+              ))}
+              <div style={{ width: 1, height: "1em", fontSize: "var(--fs-footer)", background: "var(--border-hi)", marginLeft: "0.5em" }} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2.5">
+            <span className="inline-block rounded-full animate-pulse"
+              style={{ width: "0.55em", height: "0.55em", fontSize: "var(--fs-footer)", background: "#34D399" }} />
+            <span className="font-body" style={{ fontSize: "var(--fs-footer)", color: "var(--text-4)" }}>
+              Atualiza a cada {REFRESH_INTERVAL / 1000}s
+            </span>
+          </div>
         </footer>
 
       </div>
