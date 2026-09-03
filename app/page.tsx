@@ -437,7 +437,7 @@ export default function TVPage() {
                   <div className={`grid gap-px ${runnersUp.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
                     style={{ background: "var(--border)" }}>
                     {runnersUp.map((entry, i) => (
-                      <PodiumCard key={entry.nome} entry={entry} rankIdx={i + 1} layout="row" fmt={fmt} />
+                      <PodiumCard key={entry.id ?? `${entry.nome}-${entry.pos}`} entry={entry} rankIdx={i + 1} layout="row" fmt={fmt} />
                     ))}
                   </div>
                 )}
@@ -448,7 +448,7 @@ export default function TVPage() {
                 className={`grid gap-px flex-shrink-0 mx-auto w-full ${podiumCols}`}
                 style={{ background: "var(--border)", overflow: "hidden", marginBottom: "var(--stack)" }}>
                 {podium.map((entry, i) => (
-                  <PodiumCard key={entry.nome} entry={entry} rankIdx={i} layout="stack" fmt={fmt} />
+                  <PodiumCard key={entry.id ?? `${entry.nome}-${entry.pos}`} entry={entry} rankIdx={i} layout="stack" fmt={fmt} />
                 ))}
               </div>
             )
@@ -512,7 +512,7 @@ export default function TVPage() {
                     });
                     return (
                       <tr
-                        key={entry.nome}
+                        key={entry.id ?? `${entry.nome}-${entry.pos}`}
                         className="row-animate"
                         style={{ borderBottom: "1px solid var(--border)", animationDelay: `${i * 0.05}s` }}>
 

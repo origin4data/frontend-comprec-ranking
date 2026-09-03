@@ -25,6 +25,10 @@ jobs:
         with:
           context: .
           push: true
-          tags: origin4data/ranking-comprec:latest
+          # A tag imutavel e o que torna o rollback de imagem possivel: :latest e mutavel e o Swarm
+          # pode te-la fixada num digest antigo.
+          tags: |
+            origin4data/ranking-comprec:latest
+            origin4data/ranking-comprec:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max 
