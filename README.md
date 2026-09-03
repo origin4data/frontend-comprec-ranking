@@ -77,9 +77,10 @@ Rollback da fonte de dados, sem rebuild:
 docker service update --env-add RANKING_API_URL="<url do Apps Script>" --force <stack>_frontend
 ```
 
-> `/api/rankings` é dinâmica: ela lê `RANKING_API_URL` a cada requisição, então a variável vale
-> imediatamente após o restart. O cache de 10s do fetch interno segue valendo — a origem continua
-> recebendo ~6 requisições por minuto, independentemente de quantas TVs estejam ligadas.
+> `/api/rankings` é pré-renderizada no build (`revalidate = 10`): depois de um restart, o corpo do
+> build é servido até a primeira revalidação, cerca de 10s. Uma troca de `RANKING_API_URL` vale a
+> partir daí — espere esse intervalo antes de concluir que não pegou. A origem recebe ~6
+> requisições por minuto, independentemente de quantas TVs estejam ligadas.
 
 ---
 

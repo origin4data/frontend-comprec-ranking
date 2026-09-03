@@ -1,5 +1,5 @@
 import { RankingEntry } from "./types";
-import { rankingSourceUrl } from "./config";
+import { rankingApiKey, rankingSourceUrl } from "./config";
 
 function parseNumber(s: unknown): number {
   if (typeof s === "number") return s;
@@ -81,7 +81,11 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   mensal: RankingEntry[];
   anual: RankingEntry[];
 }> {
-  const res = await fetch(jsonUrl, { next: { revalidate: 10 } });
+  const chave = rankingApiKey();
+  const res = await fetch(jsonUrl, {
+    next: { revalidate: 10 },
+    headers: chave ? { "X-Ranking-Key": chave } : undefined,
+  });
   if (!res.ok) throw new Error(`Erro ao buscar dados: ${res.status}`);
 
   const text = await res.text();
