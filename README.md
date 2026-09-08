@@ -1,70 +1,86 @@
 # Comprec — Ranking de Vendedores
 
-Painel de ranking de vendas com painel admin protegido por login.
-**Next.js 14 · Supabase · TypeScript · Tailwind CSS**
+Painel de TV, somente leitura. Busca um JSON, desenha pódio e tabela, e alterna entre o quadro
+**mensal** e o **anual** a cada 22s. Não tem login nem tela de cadastro: quem lança venda é a
+plataforma Comprec.
+**Next.js 14 · TypeScript · Tailwind CSS**
 
 ---
 
-## Páginas
+## Fonte de dados
+
+`RANKING_API_URL` — lida **no servidor, em runtime**. Sem ela, vale o default de `lib/config.ts`,
+que aponta para `https://api.comprec.origindata.com.br/api/public/ranking`.
+
+> Não renomeie para `NEXT_PUBLIC_*`. O Next inlina no bundle qualquer `NEXT_PUBLIC_*` presente no
+> ambiente durante o build, e a partir daí a variável da stack passa a ser ignorada em silêncio.
+
+O envelope esperado:
+
+```json
+{
+  "mensal": [
+    { "nome": "Natan Peixoto", "total_repasse": 12250.00, "qtd_vendas": 1,
+      "ultima_venda": "2026-09-02", "foto": "https://.../vendedor-1.jpg" }
+  ],
+  "anual": [ /* mesmo formato */ ]
+}
+```
+
+O casamento de colunas em `lib/sheets.ts` é tolerante (minúsculas, sem underscore) e aceita
+`repasse`/`valor`/`total` e `qnt_venda`/`vendas`. O que ele **não** aceita é coluna sem nome — foi
+assim que a planilha antiga, com uma coluna chamada `Coluna 2`, fez o quadro mensal exibir R$ 0
+para todo mundo.
+
+Detalhes que importam:
+
+- `ultima_venda` deve vir como `aaaa-MM-dd`. Um instante ISO completo passa pela conversão de fuso
+  e sai **um dia adiantado**.
+- `foto` precisa ser URL absoluta (caminho relativo é resolvido contra `RANKING_API_URL` como rede
+  de segurança). Vazia cai no fallback de iniciais.
+- Linhas com `total_repasse <= 0` **e** `qtd_vendas <= 0` são descartadas.
+- Empates preservam a ordem recebida, então a origem deve enviar ordem determinística.
+
+### Rotas
 
 | Rota | Descrição |
 |------|-----------|
-| `/` | Ranking público para TV **em pé / retrato** (auto-refresh + realtime) |
-| `/login` | Login do administrador |
-| `/admin` | Painel admin: ranking, registrar vendas, gerenciar funcionários |
+| `/` | O painel. Poll a cada 15s, com carrossel mensal ⇄ anual |
+| `/api/rankings` | Proxy servidor→origem, cache de 10s |
+| `/api/debug-csv` | Diagnóstico. Mostra `origem` (de onde os dados vieram de fato) e as somas por quadro — é o que se compara lado a lado na virada de fonte |
 
 ---
 
-## Setup — Passo a Passo
-
-### 1. Criar projeto no Supabase
-
-1. Acesse [supabase.com](https://supabase.com) e crie um projeto
-2. Vá em **SQL Editor** e cole todo o conteúdo de `supabase/migration.sql`
-3. Execute — isso cria as tabelas, a view do ranking, as policies e insere os 18 funcionários
-
-### 2. Criar usuário admin
-
-1. No Supabase, vá em **Authentication > Users**
-2. Clique **Add User > Create New User**
-3. Preencha e-mail e senha (ex: `admin@comprec.com.br` / `senha-forte-123`)
-4. Esse será o login para acessar `/admin`
-
-### 3. Habilitar Realtime
-
-1. No Supabase, vá em **Database > Replication**
-2. Ative replication para as tabelas `vendas` e `funcionarios`
-3. Isso faz a TV atualizar instantaneamente quando uma venda é registrada
-
-### 4. Configurar o projeto
+## Rodar
 
 ```bash
-# Instalar dependências
 npm install
-
-# Copiar e preencher variáveis de ambiente
-cp .env.local.example .env.local
-```
-
-Abra `.env.local` e preencha:
-- `NEXT_PUBLIC_SUPABASE_URL` → copie de **Settings > API > Project URL**
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` → copie de **Settings > API > anon public key**
-
-### 5. Rodar
-
-```bash
+cp .env.local.example .env.local   # opcional: o default já aponta para a API
 npm run dev
-# http://localhost:3000       → TV (ranking público)
-# http://localhost:3000/login → Login admin
-# http://localhost:3000/admin → Painel administrativo
 ```
 
-### 6. Produção (TV do escritório)
+Conferir de onde os dados estão vindo:
 
 ```bash
-npm run build && npm start
-# Abra no Chrome da TV → F11 (tela cheia)
+curl -s localhost:3000/api/debug-csv | jq '{origem, mensal: .mensal.total, anual: .anual.total}'
 ```
+
+## Deploy
+
+Push em `main` → o workflow constrói e publica `origin4data/ranking-comprec:latest` e
+`:sha-<commit>` no Docker Hub. **Ele não atualiza a stack**: o redeploy no Swarm é manual, pelo
+Portainer ou por `docker service update --force`.
+
+Rollback da fonte de dados, sem rebuild:
+
+```bash
+docker service update --env-add RANKING_API_URL="<url do Apps Script>" --force <stack>_frontend
+```
+
+> `/api/rankings` é pré-renderizada no build (`revalidate = 10`): depois de um restart, o corpo do
+> build é servido até a primeira revalidação, cerca de 10s. Uma troca de `RANKING_API_URL` vale a
+> partir daí — espere esse intervalo antes de concluir que não pegou. A origem recebe ~6
+> requisições por minuto, independentemente de quantas TVs estejam ligadas.
 
 ---
 
@@ -106,40 +122,3 @@ de `app/globals.css` e são definidos em `vmin`. Consequências práticas:
 | Tipografia | fixa em px | escalona em `vmin` |
 
 ---
-
-## Estrutura da planilha original → Banco de dados
-
-A planilha tinha: `Vendedor | Repasse | Data`
-
-No banco ficou:
-
-**Tabela `funcionarios`**: id, nome, ativo
-**Tabela `vendas`**: id, funcionario_id, repasse, data_venda
-**View `ranking_mensal`**: agrupa vendas do mês atual por funcionário
-
----
-
-## Admin — O que dá pra fazer
-
-### Aba Ranking
-- Ver ranking do mês em tempo real
-
-### Aba Registrar Venda
-- Selecionar funcionário, valor do repasse e data
-- Ver e excluir últimas vendas
-
-### Aba Funcionários
-- Adicionar novo funcionário
-- Ativar/desativar (inativo não aparece no ranking)
-- Remover (exclui junto com vendas)
-
----
-
-## Funcionários já cadastrados (via migration.sql)
-
-Pablo Trindade, Jonatas Gomes, Gabriel Pereira, Eduardo Santos,
-Luis Gustavo, Lorhan Marinho, Rafaela Gomes, Luiz Miguel,
-Ingrid Yasmin, Carlos André, Mateus Claudino, Guilherme Martins,
-Gustavo Nascimento, Margareth Marins, Phelipe Octaviano,
-Paulo Aires, Miguel Cortegiano, Gabriel Costa
-# frontend-comprec-ranking

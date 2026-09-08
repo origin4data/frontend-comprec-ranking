@@ -1,4 +1,5 @@
 import { RankingEntry } from "./types";
+import { rankingApiKey, rankingSourceUrl } from "./config";
 
 function parseNumber(s: unknown): number {
   if (typeof s === "number") return s;
@@ -37,6 +38,15 @@ function find(row: Record<string, unknown>, ...keys: string[]): unknown {
 // Converte links de compartilhamento do Google Drive para URL de imagem direta
 function normalizePhotoUrl(url: string): string {
   if (!url) return "";
+  // Cinto e suspensorio: se o backend emitir caminho relativo, o next/image resolveria contra o
+  // dominio da TV, daria 404 e todo o podio cairia no fallback de iniciais - sem erro visivel.
+  if (url.startsWith("/")) {
+    try {
+      return new URL(url, rankingSourceUrl()).toString();
+    } catch {
+      return url;
+    }
+  }
   // https://drive.google.com/file/d/FILE_ID/view?...
   const fileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
   if (fileMatch) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
@@ -50,7 +60,9 @@ function parseRows(rows: Record<string, unknown>[]): RankingEntry[] {
   const entries = rows
     .map((row) => {
       const rawFoto = String(find(row, "foto", "foto_url", "foto_link", "imagem", "photo", "avatar") ?? "").trim();
+      const rawId = find(row, "id", "vendedor_id", "vendedorid");
       return {
+        id: rawId === undefined || rawId === null || rawId === "" ? undefined : String(rawId),
         nome: String(find(row, "nome", "name", "vendedor") ?? "").trim(),
         total_repasse: parseNumber(find(row, "total_repasse", "totalrepasse", "repasse", "valor", "total")),
         qtd_vendas: parseInt(String(find(row, "qnt_venda", "qtd_venda", "qtd_vendas", "qntvendas", "qtdvendas", "vendas", "quantidade") ?? "0"), 10) || 0,
@@ -69,7 +81,11 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   mensal: RankingEntry[];
   anual: RankingEntry[];
 }> {
-  const res = await fetch(jsonUrl, { next: { revalidate: 10 } });
+  const chave = rankingApiKey();
+  const res = await fetch(jsonUrl, {
+    next: { revalidate: 10 },
+    headers: chave ? { "X-Ranking-Key": chave } : undefined,
+  });
   if (!res.ok) throw new Error(`Erro ao buscar dados: ${res.status}`);
 
   const text = await res.text();
@@ -77,9 +93,11 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   try {
     raw = JSON.parse(text);
   } catch {
+    // So chega aqui com HTTP 200 e corpo que nao e JSON; erro de status e tratado acima. A
+    // mensagem aparece na TV, no meio do escritorio: precisa apontar para algo que exista.
     throw new Error(
-      "O Apps Script retornou HTML em vez de JSON. " +
-      "Verifique se o deployment tem acesso definido como \"Qualquer pessoa\" (Anyone)."
+      `A origem respondeu 200 com um corpo que nao e JSON (${text.slice(0, 80)}...). ` +
+      "Verifique se RANKING_API_URL aponta para o endpoint certo."
     );
   }
 
