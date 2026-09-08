@@ -294,9 +294,7 @@ export default function TVPage() {
     return () => clearInterval(iv);
   }, [totalPages]);
 
-  const totalRepasse = ranking.reduce((s, r) => s + r.total_repasse, 0);
   const totalVendas  = ranking.reduce((s, r) => s + r.qtd_vendas, 0);
-  const animRepasse  = useCountUp(totalRepasse);
   const animVendas   = useCountUp(totalVendas, 900);
 
   const time = updatedAt
@@ -421,8 +419,6 @@ export default function TVPage() {
               <StatItem label="Vendedores"      value={String(ranking.length)} />
               <div style={{ width: 1, height: "1.6em", fontSize: "var(--fs-stat-value)", background: "var(--border-hi)" }} />
               <StatItem label="Total de Vendas" value={String(animVendas)} />
-              <div style={{ width: 1, height: "1.6em", fontSize: "var(--fs-stat-value)", background: "var(--border-hi)" }} />
-              <StatItem label="Repasse Total"   value={fmt(animRepasse)} accent />
             </div>
           )}
 
