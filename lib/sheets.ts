@@ -56,20 +56,46 @@ function normalizePhotoUrl(url: string): string {
   return url;
 }
 
-function parseRows(rows: Record<string, unknown>[]): RankingEntry[] {
-  const entries = rows
-    .map((row) => {
-      const rawFoto = String(find(row, "foto", "foto_url", "foto_link", "imagem", "photo", "avatar") ?? "").trim();
-      const rawId = find(row, "id", "vendedor_id", "vendedorid");
-      return {
+// Os nomes aceitos para a coluna de valor. Ficam aqui fora porque a guarda abaixo precisa saber
+// exatamente o que foi procurado para dizer o que faltou.
+const CHAVES_DE_VALOR = ["total_repasse", "totalrepasse", "repasse", "valor", "total"] as const;
+
+function parseRows(rows: Record<string, unknown>[], quadro: string): RankingEntry[] {
+  const brutas = rows.map((row) => {
+    const rawFoto = String(find(row, "foto", "foto_url", "foto_link", "imagem", "photo", "avatar") ?? "").trim();
+    const rawId = find(row, "id", "vendedor_id", "vendedorid");
+    const rawValor = find(row, ...CHAVES_DE_VALOR);
+    return {
+      rawValor,
+      entry: {
         id: rawId === undefined || rawId === null || rawId === "" ? undefined : String(rawId),
         nome: String(find(row, "nome", "name", "vendedor") ?? "").trim(),
-        total_repasse: parseNumber(find(row, "total_repasse", "totalrepasse", "repasse", "valor", "total")),
+        total_repasse: parseNumber(rawValor),
         qtd_vendas: parseInt(String(find(row, "qnt_venda", "qtd_venda", "qtd_vendas", "qntvendas", "qtdvendas", "vendas", "quantidade") ?? "0"), 10) || 0,
         ultima_venda: formatDate(find(row, "ultima_venda", "ultimavenda", "data", "datavenda", "ultimadata")),
         foto: normalizePhotoUrl(rawFoto) || undefined,
-      };
-    })
+      },
+    };
+  });
+
+  // O que deixou a TV meses exibindo R$ 0 não foi um valor errado: foi o silêncio. A planilha
+  // renomeou a coluna de valor para "Coluna 2", find() devolveu undefined, parseNumber virou 0 e o
+  // pódio passou a ordenar um monte de empate — errado, mas com cara de certo.
+  //
+  // "Não vendeu no mês" e "a coluna sumiu do payload" são coisas diferentes, e só a primeira é
+  // normal. Quem tem venda e não tem a chave de valor é contrato quebrado: melhor a TV mostrar um
+  // erro que alguém conserta do que um ranking na ordem errada que ninguém questiona.
+  const semValor = brutas.filter((b) => b.rawValor === undefined && b.entry.qtd_vendas > 0);
+  if (semValor.length > 0) {
+    throw new Error(
+      `A origem não trouxe a coluna de valor no quadro ${quadro}: ` +
+      `${semValor.length} de ${brutas.length} linhas têm venda mas nenhuma das chaves ` +
+      `${CHAVES_DE_VALOR.join("/")}. Chaves recebidas: ${Object.keys(rows[0] ?? {}).join(", ")}.`
+    );
+  }
+
+  const entries = brutas
+    .map((b) => b.entry)
     // Remove quem não tem nome ou ainda não vendeu nada
     .filter((r) => r.nome !== "" && (r.total_repasse > 0 || r.qtd_vendas > 0));
 
@@ -101,14 +127,19 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
     );
   }
 
-  // Suporte ao formato antigo (array) e novo ({ mensal, anual })
-  if (Array.isArray(raw)) {
-    return { mensal: parseRows(raw), anual: [] };
+  // O envelope é sempre { mensal, anual }. O array solto era o formato da planilha e não existe
+  // mais: continuar aceitando-o faria um payload estranho virar "anual vazio" em silêncio, que é
+  // exatamente a classe de defeito que esta migração veio encerrar.
+  const obj = (raw ?? {}) as { mensal?: unknown; anual?: unknown };
+  if (!Array.isArray(obj.mensal) || !Array.isArray(obj.anual)) {
+    throw new Error(
+      "A origem respondeu num formato inesperado: esperava { mensal: [...], anual: [...] } e " +
+      `recebeu ${JSON.stringify(raw).slice(0, 120)}...`
+    );
   }
 
-  const obj = (raw ?? {}) as { mensal?: unknown; anual?: unknown };
   return {
-    mensal: parseRows(Array.isArray(obj.mensal) ? obj.mensal : []),
-    anual: parseRows(Array.isArray(obj.anual) ? obj.anual : []),
+    mensal: parseRows(obj.mensal, "mensal"),
+    anual: parseRows(obj.anual, "anual"),
   };
 }
