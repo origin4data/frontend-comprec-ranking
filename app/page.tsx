@@ -224,6 +224,7 @@ export default function TVPage() {
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState<string | null>(null);
   const [updatedAt,     setUpdatedAt]     = useState<string | null>(null);
+  const [periodo,       setPeriodo]       = useState<{ ano: number; mes: number } | null>(null);
   const [activeView,    setActiveView]    = useState<View>("mensal");
   const [transitioning, setTransitioning] = useState(false);
   const [tablePageIdx,  setTablePageIdx]  = useState(0);
@@ -231,7 +232,10 @@ export default function TVPage() {
   const isPortrait = useIsPortrait();
   const pageSize   = isPortrait ? TABLE_PAGE_PORTRAIT : TABLE_PAGE_LANDSCAPE;
 
-  const mesAtual = MESES[new Date().getMonth() + 1];
+  // O mês vem da resposta da API — é o mesmo que ela usou para apurar os números. Tirá-lo do
+  // relógio do navegador deixaria rótulo e dados divergirem na virada do mês. Até a primeira
+  // resposta chegar, o relógio local serve de palpite.
+  const mesAtual = MESES[periodo?.mes ?? new Date().getMonth() + 1];
   const ranking  = activeView === "mensal" ? mensalRanking : anualRanking;
   const hasAnual = anualRanking.length > 0;
   const hasBoth  = mensalRanking.length > 0 && hasAnual;
@@ -245,9 +249,10 @@ export default function TVPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Erro HTTP ${res.status}`);
       }
-      const { mensal, anual } = await res.json();
+      const { mensal, anual, periodo: periodoDaApi } = await res.json();
       setMensalRanking(mensal ?? []);
       setAnualRanking(anual ?? []);
+      setPeriodo(periodoDaApi ?? null);
       setUpdatedAt(new Date().toISOString());
       setError(null);
     } catch (e: any) {
