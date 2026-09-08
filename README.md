@@ -1,8 +1,9 @@
 # Comprec — Ranking de Vendedores
 
-Painel de TV, somente leitura. Busca um JSON, desenha pódio e tabela, e alterna entre o quadro
-**mensal** e o **anual** a cada 22s. Não tem login nem tela de cadastro: quem lança venda é a
-plataforma Comprec.
+Painel de TV, somente leitura. Lê o ranking apurado pela API do Comprec — venda lançada mais
+ajuste, direto do banco da plataforma —, desenha pódio e tabela e alterna entre o quadro **mensal**
+e o **anual** a cada 22s. Não tem login nem tela de cadastro: quem lança venda é a plataforma
+Comprec.
 **Next.js 14 · TypeScript · Tailwind CSS**
 
 ---
@@ -28,18 +29,26 @@ O envelope esperado:
 ```
 
 O casamento de colunas em `lib/sheets.ts` é tolerante (minúsculas, sem underscore) e aceita
-`repasse`/`valor`/`total` e `qnt_venda`/`vendas`. O que ele **não** aceita é coluna sem nome — foi
-assim que a planilha antiga, com uma coluna chamada `Coluna 2`, fez o quadro mensal exibir R$ 0
-para todo mundo.
+`repasse`/`valor`/`total` e `qnt_venda`/`vendas`. O que ele **não** aceita mais é sumiço da coluna
+de valor: linha com venda e sem nenhuma das chaves de repasse **derruba a leitura com erro**, em vez
+de virar R$ 0. Foi exatamente assim, com uma coluna chamada `Coluna 2`, que a planilha antiga
+manteve o quadro mensal zerado — e, como todo mundo empatava em zero, o pódio na ordem errada.
 
 Detalhes que importam:
 
+- O período vai **explícito** na query: `?ano=&mes=`, calculado em `America/Sao_Paulo` e devolvido
+  em `periodo` na resposta, que é o que o cabeçalho da TV usa. Sem isso, o contêiner (UTC) viraria
+  o mês três horas antes do rótulo. Um `ano`/`mes` já presente em `RANKING_API_URL` é respeitado.
 - `ultima_venda` deve vir como `aaaa-MM-dd`. Um instante ISO completo passa pela conversão de fuso
   e sai **um dia adiantado**.
 - `foto` precisa ser URL absoluta (caminho relativo é resolvido contra `RANKING_API_URL` como rede
   de segurança). Vazia cai no fallback de iniciais.
 - Linhas com `total_repasse <= 0` **e** `qtd_vendas <= 0` são descartadas.
 - Empates preservam a ordem recebida, então a origem deve enviar ordem determinística.
+- Qualquer corpo fora do envelope `{ mensal, anual }` é recusado. Não há mais tolerância a formato
+  de array solto: era o da planilha, e aceitá-lo faria payload estranho virar "anual vazio" calado.
+- A busca é **server-side, sempre**. A API bloqueia CORS de origem externa (403 `Invalid CORS
+  request`), então o navegador da TV não consegue — e não deve — falar direto com ela.
 
 ### Rotas
 
@@ -71,11 +80,9 @@ Push em `main` → o workflow constrói e publica `origin4data/ranking-comprec:l
 `:sha-<commit>` no Docker Hub. **Ele não atualiza a stack**: o redeploy no Swarm é manual, pelo
 Portainer ou por `docker service update --force`.
 
-Rollback da fonte de dados, sem rebuild:
-
-```bash
-docker service update --env-add RANKING_API_URL="<url do Apps Script>" --force <stack>_frontend
-```
+Se a origem falhar, `/api/rankings` serve o **último payload bom** desta instância com `stale: true`
+no corpo, em vez de trocar o ranking por uma mensagem de erro na parede do escritório. O último bom
+vive na memória do processo: some no restart.
 
 > `/api/rankings` é pré-renderizada no build (`revalidate = 10`): depois de um restart, o corpo do
 > build é servido até a primeira revalidação, cerca de 10s. Uma troca de `RANKING_API_URL` vale a
