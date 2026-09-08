@@ -5,7 +5,7 @@ services:
     image: origin4data/ranking-comprec:latest
     environment:
       # Fonte de dados. Server-only e lida em runtime: trocar aqui reponta o painel sem rebuild.
-      # Rollback para a planilha: use a URL do Apps Script (LEGACY_APPS_SCRIPT_URL em lib/config.ts).
+      # O período vai explícito na URL: sem ?ano=&mes=, o painel usa o mês corrente em São Paulo.
       - RANKING_API_URL=https://api.comprec.origindata.com.br/api/public/ranking
       # Preencher quando o backend ligar RANKING_PUBLIC_KEY. Vazia = rota publica aberta.
       # - RANKING_API_KEY=
