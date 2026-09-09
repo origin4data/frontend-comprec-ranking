@@ -60,6 +60,42 @@ Detalhes que importam:
 
 ---
 
+## Basic auth (opcional)
+
+O painel pode exigir usuário e senha em **todas** as rotas, `/api/rankings` e `/api/debug-csv`
+inclusas. Liga-se pela env da stack, sem rebuild:
+
+| Variável | Efeito |
+|---|---|
+| `BASIC_AUTH_USER` | usuário aceito |
+| `BASIC_AUTH_PASSWORD` | senha aceita |
+
+Com os dois preenchidos, o servidor responde `401` com `WWW-Authenticate: Basic` e o navegador da
+TV pede as credenciais **uma vez**, guardando-as enquanto a aba viver. Com qualquer um dos dois
+vazio, o painel fica aberto, como sempre foi. A comparação é em tempo constante, e os valores nunca
+vão ao bundle (não são `NEXT_PUBLIC_*`): trocar a senha é trocar a env e redeployar.
+
+Para ligar:
+
+1. Portainer → *Stacks → ranking-comprec → Environment variables*: adicione `BASIC_AUTH_USER` e
+   `BASIC_AUTH_PASSWORD` (o `docker-compose.yml` já as repassa ao contêiner).
+2. *Update the stack* (redeploy). A imagem já contém o `middleware.ts`; só a env muda.
+3. No quiosque, ponha as credenciais na URL para o Chrome não parar no prompt:
+
+   ```bash
+   chrome.exe --kiosk --noerrdialogs --disable-infobars "https://usuario:senha@ranking-comprec.origindata.com.br/"
+   ```
+
+   Se o navegador da TV ignorar credenciais na URL, digite-as uma vez no prompt; ele as reaproveita
+   em todos os pedidos seguintes, inclusive o poll de `/api/rankings`.
+
+Para desligar, esvazie ou remova uma das variáveis e redeploye.
+
+Isto protege o **painel**. `RANKING_API_KEY` é outra coisa: é o que este servidor manda para a API
+do Comprec no header `X-Ranking-Key`, e segue independente.
+
+---
+
 ## Rodar
 
 ```bash
