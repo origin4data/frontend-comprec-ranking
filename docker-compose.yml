@@ -28,7 +28,7 @@ services:
         - "traefik.enable=true"
         - "traefik.docker.network=network_swarm_public"
 
-        - "traefik.http.routers.ranking-comprec.rule=Host(`ranking-comprec.origindata.com.br`)"
+        - "traefik.http.routers.ranking-comprec.rule=Host(`ranking.comprec.com.br`)"
         - "traefik.http.routers.ranking-comprec.entrypoints=websecure"
         - "traefik.http.routers.ranking-comprec.tls=true"
         - "traefik.http.routers.ranking-comprec.tls.certresolver=letsencryptresolver"
