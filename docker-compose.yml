@@ -9,6 +9,11 @@ services:
       - RANKING_API_URL=https://api.comprec.origindata.com.br/api/public/ranking
       # Preencher quando o backend ligar RANKING_PUBLIC_KEY. Vazia = rota publica aberta.
       # - RANKING_API_KEY=
+      # Basic auth do painel (todas as rotas, /api incluso). Os dois preenchidos = o navegador da TV
+      # pede usuario e senha uma vez e guarda; qualquer um vazio = painel aberto, como sempre foi.
+      # Valores vem das "Environment variables" da stack no Portainer; nao os grave neste arquivo.
+      - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
+      - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD:-}
     networks:
       - network_swarm_public
     deploy:
