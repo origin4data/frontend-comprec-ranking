@@ -13,8 +13,7 @@
 //
 // O default aponta para produção para que um clone novo funcione sem configuração nenhuma; a env
 // var existe para apontar o painel a um ambiente de teste.
-export const RANKING_API_URL_DEFAULT =
-  "https://api.comprec.origindata.com.br/api/public/ranking";
+export const RANKING_API_URL_DEFAULT = "https://api.comprec.origindata.com.br/api/public/ranking";
 
 // Chave do painel, quando o backend exigir. Hoje o servidor esta com RANKING_PUBLIC_KEY vazia e a
 // rota publica esta aberta, entao o header so e enviado se esta variavel existir - ligar depois e

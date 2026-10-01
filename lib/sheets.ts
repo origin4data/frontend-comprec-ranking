@@ -3,8 +3,11 @@ import { rankingApiKey, rankingSourceUrl } from "./config";
 
 function parseNumber(s: unknown): number {
   if (typeof s === "number") return s;
-  const v = String(s ?? "").trim().replace(/[R$\s]/g, "");
-  if (v.includes(",") && v.includes(".")) return parseFloat(v.replace(/\./g, "").replace(",", ".")) || 0;
+  const v = String(s ?? "")
+    .trim()
+    .replace(/[R$\s]/g, "");
+  if (v.includes(",") && v.includes("."))
+    return parseFloat(v.replace(/\./g, "").replace(",", ".")) || 0;
   if (v.includes(",")) return parseFloat(v.replace(",", ".")) || 0;
   return parseFloat(v) || 0;
 }
@@ -16,7 +19,12 @@ function formatDate(val: unknown): string {
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s);
     if (!isNaN(d.getTime()))
-      return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
+      return d.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "America/Sao_Paulo",
+      });
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split("-");
@@ -62,7 +70,9 @@ const CHAVES_DE_VALOR = ["total_repasse", "totalrepasse", "repasse", "valor", "t
 
 function parseRows(rows: Record<string, unknown>[], quadro: string): RankingEntry[] {
   const brutas = rows.map((row) => {
-    const rawFoto = String(find(row, "foto", "foto_url", "foto_link", "imagem", "photo", "avatar") ?? "").trim();
+    const rawFoto = String(
+      find(row, "foto", "foto_url", "foto_link", "imagem", "photo", "avatar") ?? "",
+    ).trim();
     const rawId = find(row, "id", "vendedor_id", "vendedorid");
     const rawValor = find(row, ...CHAVES_DE_VALOR);
     return {
@@ -71,8 +81,25 @@ function parseRows(rows: Record<string, unknown>[], quadro: string): RankingEntr
         id: rawId === undefined || rawId === null || rawId === "" ? undefined : String(rawId),
         nome: String(find(row, "nome", "name", "vendedor") ?? "").trim(),
         total_repasse: parseNumber(rawValor),
-        qtd_vendas: parseInt(String(find(row, "qnt_venda", "qtd_venda", "qtd_vendas", "qntvendas", "qtdvendas", "vendas", "quantidade") ?? "0"), 10) || 0,
-        ultima_venda: formatDate(find(row, "ultima_venda", "ultimavenda", "data", "datavenda", "ultimadata")),
+        qtd_vendas:
+          parseInt(
+            String(
+              find(
+                row,
+                "qnt_venda",
+                "qtd_venda",
+                "qtd_vendas",
+                "qntvendas",
+                "qtdvendas",
+                "vendas",
+                "quantidade",
+              ) ?? "0",
+            ),
+            10,
+          ) || 0,
+        ultima_venda: formatDate(
+          find(row, "ultima_venda", "ultimavenda", "data", "datavenda", "ultimadata"),
+        ),
         foto: normalizePhotoUrl(rawFoto) || undefined,
       },
     };
@@ -89,8 +116,8 @@ function parseRows(rows: Record<string, unknown>[], quadro: string): RankingEntr
   if (semValor.length > 0) {
     throw new Error(
       `A origem não trouxe a coluna de valor no quadro ${quadro}: ` +
-      `${semValor.length} de ${brutas.length} linhas têm venda mas nenhuma das chaves ` +
-      `${CHAVES_DE_VALOR.join("/")}. Chaves recebidas: ${Object.keys(rows[0] ?? {}).join(", ")}.`
+        `${semValor.length} de ${brutas.length} linhas têm venda mas nenhuma das chaves ` +
+        `${CHAVES_DE_VALOR.join("/")}. Chaves recebidas: ${Object.keys(rows[0] ?? {}).join(", ")}.`,
     );
   }
 
@@ -123,7 +150,7 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
     // mensagem aparece na TV, no meio do escritorio: precisa apontar para algo que exista.
     throw new Error(
       `A origem respondeu 200 com um corpo que nao e JSON (${text.slice(0, 80)}...). ` +
-      "Verifique se RANKING_API_URL aponta para o endpoint certo."
+        "Verifique se RANKING_API_URL aponta para o endpoint certo.",
     );
   }
 
@@ -134,7 +161,7 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   if (!Array.isArray(obj.mensal) || !Array.isArray(obj.anual)) {
     throw new Error(
       "A origem respondeu num formato inesperado: esperava { mensal: [...], anual: [...] } e " +
-      `recebeu ${JSON.stringify(raw).slice(0, 120)}...`
+        `recebeu ${JSON.stringify(raw).slice(0, 120)}...`,
     );
   }
 

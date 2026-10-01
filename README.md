@@ -21,10 +21,15 @@ O envelope esperado:
 ```json
 {
   "mensal": [
-    { "nome": "Natan Peixoto", "total_repasse": 12250.00, "qtd_vendas": 1,
-      "ultima_venda": "2026-09-02", "foto": "https://.../vendedor-1.jpg" }
+    {
+      "nome": "Natan Peixoto",
+      "total_repasse": 12250.0,
+      "qtd_vendas": 1,
+      "ultima_venda": "2026-09-02",
+      "foto": "https://.../vendedor-1.jpg"
+    }
   ],
-  "anual": [ /* mesmo formato */ ]
+  "anual": [/* mesmo formato */]
 }
 ```
 
@@ -48,14 +53,14 @@ Detalhes que importam:
 - Qualquer corpo fora do envelope `{ mensal, anual }` é recusado. Não há mais tolerância a formato
   de array solto: era o da planilha, e aceitá-lo faria payload estranho virar "anual vazio" calado.
 - A busca é **server-side, sempre**. A API bloqueia CORS de origem externa (403 `Invalid CORS
-  request`), então o navegador da TV não consegue — e não deve — falar direto com ela.
+request`), então o navegador da TV não consegue — e não deve — falar direto com ela.
 
 ### Rotas
 
-| Rota | Descrição |
-|------|-----------|
-| `/` | O painel. Poll a cada 15s, com carrossel mensal ⇄ anual |
-| `/api/rankings` | Proxy servidor→origem, cache de 10s |
+| Rota             | Descrição                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`              | O painel. Poll a cada 15s, com carrossel mensal ⇄ anual                                                                                  |
+| `/api/rankings`  | Proxy servidor→origem, cache de 10s                                                                                                      |
 | `/api/debug-csv` | Diagnóstico. Mostra `origem` (de onde os dados vieram de fato) e as somas por quadro — é o que se compara lado a lado na virada de fonte |
 
 ---
@@ -122,10 +127,10 @@ de `app/globals.css` e são definidos em `vmin`. Consequências práticas:
 
 ### O que muda em pé vs. deitado
 
-| | Paisagem | Retrato (TV em pé) |
-|---|---|---|
-| Pódio | 3 colunas lado a lado | 1º lugar em destaque de largura total + 2º/3º embaixo |
-| Linhas na tabela | 5 por página | 8 por página |
-| Tipografia | fixa em px | escalona em `vmin` |
+|                  | Paisagem              | Retrato (TV em pé)                                    |
+| ---------------- | --------------------- | ----------------------------------------------------- |
+| Pódio            | 3 colunas lado a lado | 1º lugar em destaque de largura total + 2º/3º embaixo |
+| Linhas na tabela | 5 por página          | 8 por página                                          |
+| Tipografia       | fixa em px            | escalona em `vmin`                                    |
 
 ---

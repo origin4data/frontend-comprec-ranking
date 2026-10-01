@@ -1,0 +1,20 @@
+# Normaliza quebras de linha para LF no repositório.
+# Sem isto, o autocrlf do Windows grava CRLF na árvore de trabalho e o
+# Prettier (endOfLine: "lf") acusa o arquivo inteiro como desformatado.
+* text=auto eol=lf
+
+# Binários — nunca normalizar
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.avif  binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+
+# Lockfile: reduz ruído em diffs e conflitos
+package-lock.json -diff linguist-generated
