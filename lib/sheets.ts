@@ -1,4 +1,4 @@
-import { RankingEntry } from "./types";
+import { RankingEntry, TotaisDoQuadro, TotaisRanking } from "./types";
 import { rankingApiKey, rankingSourceUrl } from "./config";
 
 function parseNumber(s: unknown): number {
@@ -130,9 +130,50 @@ function parseRows(rows: Record<string, unknown>[], quadro: string): RankingEntr
   return entries.map((r, i) => ({ pos: i + 1, ...r }));
 }
 
+/**
+ * Os totais de um quadro, quando o servidor os manda.
+ *
+ * **Cai em silêncio para `undefined`, e aqui isso é o certo** — ao contrário da guarda da coluna
+ * de valor logo acima, que grita. A diferença: lá o silêncio produzia um ranking na ordem errada
+ * com cara de certo; aqui a ausência apenas devolve o painel ao comportamento anterior, que é
+ * somar a lista. Degradar para o certo-de-ontem não justifica derrubar a TV.
+ *
+ * `find` normaliza maiúsculas e sublinhados, então `qtdVendas` do Java e `qtd_vendas` da planilha
+ * casam sem precisar de duas grafias no contrato.
+ */
+function parseTotaisDoQuadro(raw: unknown): TotaisDoQuadro | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+
+  const bruto = find(
+    raw as Record<string, unknown>,
+    "qtd_vendas",
+    "qnt_vendas",
+    "vendas",
+    "quantidade",
+  );
+  const numero = typeof bruto === "number" ? bruto : parseInt(String(bruto ?? ""), 10);
+
+  // Negativo ou fracionado é contrato quebrado, não número ruim: ignora e soma a lista.
+  if (!Number.isInteger(numero) || numero < 0) return undefined;
+
+  return { qtd_vendas: numero };
+}
+
+function parseTotais(raw: unknown): TotaisRanking | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+
+  const obj = raw as Record<string, unknown>;
+  const mensal = parseTotaisDoQuadro(obj.mensal);
+  const anual = parseTotaisDoQuadro(obj.anual);
+
+  // Nenhum dos dois quadros legível é o mesmo que não ter vindo.
+  return mensal === undefined && anual === undefined ? undefined : { mensal, anual };
+}
+
 export async function fetchAllRankings(jsonUrl: string): Promise<{
   mensal: RankingEntry[];
   anual: RankingEntry[];
+  totais?: TotaisRanking;
 }> {
   const chave = rankingApiKey();
   const res = await fetch(jsonUrl, {
@@ -157,7 +198,10 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   // O envelope é sempre { mensal, anual }. O array solto era o formato da planilha e não existe
   // mais: continuar aceitando-o faria um payload estranho virar "anual vazio" em silêncio, que é
   // exatamente a classe de defeito que esta migração veio encerrar.
-  const obj = (raw ?? {}) as { mensal?: unknown; anual?: unknown };
+  // `totais` é chave IRMÃ de `mensal` e `anual`, nunca um envelope em volta delas: a guarda
+  // abaixo exige os dois arrays no topo, e aninhá-los derrubaria o painel com a mensagem de erro
+  // na TV. O contrato com o backend é { mensal: [...], anual: [...], totais: {...} }.
+  const obj = (raw ?? {}) as { mensal?: unknown; anual?: unknown; totais?: unknown };
   if (!Array.isArray(obj.mensal) || !Array.isArray(obj.anual)) {
     throw new Error(
       "A origem respondeu num formato inesperado: esperava { mensal: [...], anual: [...] } e " +
@@ -168,5 +212,6 @@ export async function fetchAllRankings(jsonUrl: string): Promise<{
   return {
     mensal: parseRows(obj.mensal, "mensal"),
     anual: parseRows(obj.anual, "anual"),
+    totais: parseTotais(obj.totais),
   };
 }
