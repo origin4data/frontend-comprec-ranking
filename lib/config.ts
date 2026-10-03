@@ -15,9 +15,16 @@
 // var existe para apontar o painel a um ambiente de teste.
 export const RANKING_API_URL_DEFAULT = "https://api.comprec.origindata.com.br/api/public/ranking";
 
-// Chave do painel, quando o backend exigir. Hoje o servidor esta com RANKING_PUBLIC_KEY vazia e a
-// rota publica esta aberta, entao o header so e enviado se esta variavel existir - ligar depois e
-// preencher a env var e reiniciar, sem novo deploy de codigo.
+// Chave do painel. **O backend ja exige**: desde 02/10/2026 a rota publica responde 401 "Chave do
+// painel ausente ou invalida" sem o header. Conferido em 03/10/2026.
+//
+// Isto quer dizer que RANKING_API_KEY deixou de ser opcional: sem ela na stack, a TV mostra "Erro
+// ao carregar", ou o ultimo dado bom que ainda estiver na memoria do processo. O `undefined` abaixo
+// continua existindo so para o painel subir contra um ambiente de teste sem chave - nao porque a
+// producao possa viver sem ela.
+//
+// O valor vive nas variaveis da stack no Portainer. Trocar a chave e reiniciar basta; nao precisa
+// de deploy de codigo.
 //
 // Server-only, como a URL: esta chave e um segredo de verdade (quem busca e este servidor Next,
 // nao o navegador do visitante) e nao pode acabar no bundle do cliente.
