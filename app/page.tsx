@@ -34,20 +34,32 @@ const RANK = [
   },
 ] as const;
 
+// O avatar no formato do atributo `sizes`, que não lê var() do CSS. Espelha --avatar-1/--avatar-2
+// de globals.css: vmin na TV em pé, px na paisagem. É por ele que o navegador escolhe a largura que
+// pede ao otimizador — sem ele, cairia em 100vw e pediria uma foto da largura da tela.
+const AVATAR_SIZES = {
+  primeiro: "(orientation: portrait) 26vmin, 220px",
+  demais:   "(orientation: portrait) 12.5vmin, 168px",
+};
+
 function useCountUp(target: number, duration = 1200) {
   const [value, setValue] = useState(0);
-  const prev = useRef(0);
+  const atual = useRef(0);
   useEffect(() => {
-    const from = prev.current;
+    // Parte de onde o número está, não do alvo anterior: a troca mensal/anual pode chegar no meio
+    // de uma contagem, e o laço antigo é cancelado em vez de disputar o estado com o novo.
+    const from = atual.current;
     const t0 = performance.now();
+    let raf = 0;
     const tick = (now: number) => {
       const p = Math.min((now - t0) / duration, 1);
       const e = 1 - Math.pow(1 - p, 3);
-      setValue(Math.round(from + (target - from) * e));
-      if (p < 1) requestAnimationFrame(tick);
-      else prev.current = target;
+      atual.current = Math.round(from + (target - from) * e);
+      setValue(atual.current);
+      if (p < 1) raf = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [target, duration]);
   return value;
 }
@@ -74,7 +86,15 @@ function PodiumAvatar({
   const t        = RANK[rankIdx] ?? RANK[2];
   const isFirst  = rankIdx === 0;
   const initials = nome.split(" ").filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
-  const [imgFailed, setImgFailed] = useState(false);
+
+  // Três tentativas, nesta ordem: a versão do otimizador (WebP do tamanho do avatar, uns poucos KB),
+  // a URL original (o upload cru, até 2 MB — era o que a TV baixava sempre) e as iniciais. A original
+  // só entra se o otimizador recusar: host fora do remotePatterns, cota da Vercel, origem fora do ar.
+  //
+  // A etapa fica guardada junto da URL. O card do 1º lugar não remonta quando o líder muda, só troca
+  // a foto — sem isso, a falha de uma foto valeria para a do próximo líder.
+  const [falha, setFalha] = useState<{ foto?: string; etapa: number }>({ foto, etapa: 0 });
+  const etapa = falha.foto === foto ? falha.etapa : 0;
 
   const ring: React.CSSProperties = {
     width: size, height: size,
@@ -82,7 +102,7 @@ function PodiumAvatar({
     boxShadow: `0 0 ${isFirst ? 40 : 26}px ${t.glow}, 0 0 0 1px rgba(255,255,255,0.04)`,
   };
 
-  const showFallback = !foto || imgFailed;
+  const showFallback = !foto || etapa >= 2;
 
   return showFallback ? (
     <div
@@ -96,11 +116,10 @@ function PodiumAvatar({
         src={foto!}
         alt={nome}
         fill
-        sizes={size}
-        quality={92}
+        sizes={isFirst ? AVATAR_SIZES.primeiro : AVATAR_SIZES.demais}
         className="object-cover"
-        unoptimized
-        onError={() => setImgFailed(true)}
+        unoptimized={etapa === 1}
+        onError={() => setFalha({ foto, etapa: etapa + 1 })}
       />
     </div>
   );
@@ -120,6 +139,13 @@ function StatItem({ label, value, accent }: { label: string; value: string; acce
       </p>
     </div>
   );
+}
+
+// A contagem anima a cada quadro durante quase um segundo, a cada troca mensal/anual. Morando aqui,
+// cada quadro redesenha só este número; no TVPage, redesenhava a página inteira junto.
+function TotalDeVendas({ total }: { total: number }) {
+  const animado = useCountUp(total, 900);
+  return <StatItem label="Total de Vendas" value={String(animado)} />;
 }
 
 // ── Podium card ───────────────────────────────────────────────
@@ -223,7 +249,7 @@ export default function TVPage() {
   const [anualRanking,  setAnualRanking]  = useState<RankingEntry[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState<string | null>(null);
-  const [updatedAt,     setUpdatedAt]     = useState<string | null>(null);
+  const [time,          setTime]          = useState<string | null>(null);
   const [periodo,       setPeriodo]       = useState<{ ano: number; mes: number } | null>(null);
   const [activeView,    setActiveView]    = useState<View>("mensal");
   const [transitioning, setTransitioning] = useState(false);
@@ -240,6 +266,10 @@ export default function TVPage() {
   const hasAnual = anualRanking.length > 0;
   const hasBoth  = mensalRanking.length > 0 && hasAnual;
 
+  // O corpo da última resposta aplicada. O polling roda a cada 15 s e os números mudam poucas vezes
+  // por hora: com corpo igual, nenhum estado de dado muda e a página não é redesenhada à toa.
+  const ultimoCorpo = useRef<string | null>(null);
+
   const fetchRanking = useCallback(async () => {
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), 12_000);
@@ -249,11 +279,16 @@ export default function TVPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Erro HTTP ${res.status}`);
       }
-      const { mensal, anual, periodo: periodoDaApi } = await res.json();
-      setMensalRanking(mensal ?? []);
-      setAnualRanking(anual ?? []);
-      setPeriodo(periodoDaApi ?? null);
-      setUpdatedAt(new Date().toISOString());
+      const corpo = await res.text();
+      if (corpo !== ultimoCorpo.current) {
+        const { mensal, anual, periodo: periodoDaApi } = JSON.parse(corpo);
+        setMensalRanking(mensal ?? []);
+        setAnualRanking(anual ?? []);
+        setPeriodo(periodoDaApi ?? null);
+        ultimoCorpo.current = corpo;
+      }
+      // Já formatado: o estado só muda quando o minuto vira, não a cada resposta.
+      setTime(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
       setError(null);
     } catch (e: any) {
       const msg = e.name === "AbortError"
@@ -300,11 +335,6 @@ export default function TVPage() {
   }, [totalPages]);
 
   const totalVendas  = ranking.reduce((s, r) => s + r.qtd_vendas, 0);
-  const animVendas   = useCountUp(totalVendas, 900);
-
-  const time = updatedAt
-    ? new Date(updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    : null;
 
   const fmt = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
@@ -317,23 +347,24 @@ export default function TVPage() {
     "grid-cols-3 max-w-5xl";
 
   return (
-    <div className="grain tv-shell relative w-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="tv-shell relative w-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
 
       {/* ── Background atmosphere ──────────────────────── */}
-      <div className="absolute inset-0 pointer-events-none" aria-hidden>
-        {/* Top teal glow — brand presence */}
-        <div style={{ background: "radial-gradient(ellipse 120% 45% at 50% -5%, rgba(72,186,184,0.07) 0%, transparent 60%)" }}
-          className="absolute inset-0" />
-        {/* Bottom-right gold whisper — awards warmth */}
-        <div style={{ background: "radial-gradient(ellipse 55% 40% at 90% 95%, rgba(200,160,64,0.04) 0%, transparent 60%)" }}
-          className="absolute inset-0" />
-        {/* Bottom-left teal echo */}
-        <div style={{ background: "radial-gradient(ellipse 45% 35% at 10% 95%, rgba(72,186,184,0.03) 0%, transparent 55%)" }}
-          className="absolute inset-0" />
-        {/* Vignette */}
-        <div style={{ background: "radial-gradient(ellipse 100% 100% at 50% 50%, transparent 55%, rgba(0,0,0,0.35) 100%)" }}
-          className="absolute inset-0" />
-      </div>
+      {/* Uma camada só, com os quatro gradientes empilhados (o primeiro da lista fica por cima). Com
+          quatro divs de tela cheia, cada repintura do fundo pintava a tela inteira quatro vezes. */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden
+        style={{
+          background: [
+            // Vignette
+            "radial-gradient(ellipse 100% 100% at 50% 50%, transparent 55%, rgba(0,0,0,0.35) 100%)",
+            // Bottom-left teal echo
+            "radial-gradient(ellipse 45% 35% at 10% 95%, rgba(72,186,184,0.03) 0%, transparent 55%)",
+            // Bottom-right gold whisper — awards warmth
+            "radial-gradient(ellipse 55% 40% at 90% 95%, rgba(200,160,64,0.04) 0%, transparent 60%)",
+            // Top teal glow — brand presence
+            "radial-gradient(ellipse 120% 45% at 50% -5%, rgba(72,186,184,0.07) 0%, transparent 60%)",
+          ].join(", "),
+        }} />
 
       <div
         className="relative z-10 mx-auto w-full h-full flex flex-col"
@@ -423,7 +454,7 @@ export default function TVPage() {
             <div className="flex items-center justify-center flex-shrink-0" style={{ marginBottom: "var(--stack)" }}>
               <StatItem label="Vendedores"      value={String(ranking.length)} />
               <div style={{ width: 1, height: "1.6em", fontSize: "var(--fs-stat-value)", background: "var(--border-hi)" }} />
-              <StatItem label="Total de Vendas" value={String(animVendas)} />
+              <TotalDeVendas total={totalVendas} />
             </div>
           )}
 
