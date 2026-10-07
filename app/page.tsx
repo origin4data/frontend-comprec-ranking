@@ -79,6 +79,11 @@ function useIsPortrait() {
 
 type View = "mensal" | "anual";
 
+// Até onde cada foto já precisou descer (veja PodiumAvatar), lembrado pela página inteira. Sem isso,
+// cada card novo da mesma pessoa repetia a tentativa que já falhou — esperava o otimizador recusar e
+// só então baixava a original —, e a foto piscava a cada vez que reaparecia.
+const etapaPorFoto = new Map<string, number>();
+
 // ── Avatar component ──────────────────────────────────────────
 function PodiumAvatar({
   nome, foto, rankIdx, size, className = "",
@@ -93,8 +98,9 @@ function PodiumAvatar({
   //
   // A etapa fica guardada junto da URL. O card do 1º lugar não remonta quando o líder muda, só troca
   // a foto — sem isso, a falha de uma foto valeria para a do próximo líder.
-  const [falha, setFalha] = useState<{ foto?: string; etapa: number }>({ foto, etapa: 0 });
-  const etapa = falha.foto === foto ? falha.etapa : 0;
+  const etapaConhecida = (f?: string) => (f ? etapaPorFoto.get(f) ?? 0 : 0);
+  const [falha, setFalha] = useState<{ foto?: string; etapa: number }>(() => ({ foto, etapa: etapaConhecida(foto) }));
+  const etapa = falha.foto === foto ? falha.etapa : etapaConhecida(foto);
 
   const ring: React.CSSProperties = {
     width: size, height: size,
@@ -118,8 +124,14 @@ function PodiumAvatar({
         fill
         sizes={isFirst ? AVATAR_SIZES.primeiro : AVATAR_SIZES.demais}
         className="object-cover"
+        // O pódio do quadro que não está na tela fica montado e escondido (veja Podio): a foto dele
+        // tem de carregar já, para estar pronta quando a troca mensal/anual o mostrar.
+        loading="eager"
         unoptimized={etapa === 1}
-        onError={() => setFalha({ foto, etapa: etapa + 1 })}
+        onError={() => {
+          etapaPorFoto.set(foto!, etapa + 1);
+          setFalha({ foto, etapa: etapa + 1 });
+        }}
       />
     </div>
   );
@@ -149,14 +161,17 @@ function TotalDeVendas({ total }: { total: number }) {
 }
 
 // ── Podium card ───────────────────────────────────────────────
-// `layout` decide a forma: "hero"/"row" (TV em pé) ou "stack" (paisagem)
+// `layout` decide a forma: "hero"/"row" (TV em pé) ou "stack" (paisagem). `ativo` diz se o quadro
+// dele é o que está na tela: as animações só valem nesse caso, e recolocar a classe ao voltar para a
+// tela reinicia a entrada sem remontar o card — nem a foto.
 function PodiumCard({
-  entry, rankIdx, layout, fmt,
+  entry, rankIdx, layout, fmt, ativo,
 }: {
   entry: RankingEntry;
   rankIdx: number;
   layout: "hero" | "row" | "stack";
   fmt: (v: number) => string;
+  ativo: boolean;
 }) {
   const t         = RANK[rankIdx] ?? RANK[2];
   const isFirst   = rankIdx === 0;
@@ -203,7 +218,7 @@ function PodiumCard({
 
   return (
     <div
-      className={`relative overflow-hidden podium-enter ${isFirst ? "podium-first" : ""} ${horizontal ? "" : "text-center"}`}
+      className={`relative overflow-hidden ${ativo ? "podium-enter" : ""} ${isFirst && ativo ? "podium-first" : ""} ${horizontal ? "" : "text-center"}`}
       style={{
         padding:        cardPad,
         background:     `linear-gradient(${horizontal ? "100deg" : "170deg"}, ${t.surface} 0%, var(--bg) 70%)`,
@@ -230,6 +245,59 @@ function PodiumCard({
       ) : (
         <div className="relative" style={{ zIndex: 1 }}>{info}</div>
       )}
+    </div>
+  );
+}
+
+// ── Podium ────────────────────────────────────────────────────
+// Um pódio por quadro, os dois montados o tempo todo e empilhados na mesma célula de grid; a troca
+// mensal/anual só alterna qual fica visível. Antes, trocar de quadro recriava os cards e as fotos, e
+// cada <img> nova dependia do cache do navegador para aparecer junto com o resto — a da reserva (a
+// original, que o /uploads serve com no-store) ia à rede de novo. A foto piscava a cada 22 s.
+// Empilhados, a altura reservada é a do maior pódio e nada pula na troca.
+function Podio({
+  podium, ativo, isPortrait, fmt,
+}: {
+  podium: RankingEntry[];
+  ativo: boolean;
+  isPortrait: boolean;
+  fmt: (v: number) => string;
+}) {
+  if (podium.length === 0) return null;
+
+  const camada: React.CSSProperties = {
+    gridArea:   "1 / 1",
+    alignSelf:  "start",
+    visibility: ativo ? "visible" : "hidden",
+    background: "var(--border)",
+  };
+  const runnersUp = podium.slice(1);
+  const podiumCols =
+    podium.length === 1 ? "grid-cols-1 max-w-xs" :
+    podium.length === 2 ? "grid-cols-2 max-w-2xl" :
+    "grid-cols-3 max-w-5xl";
+  const chave = (entry: RankingEntry) => entry.id ?? `${entry.nome}-${entry.pos}`;
+
+  return isPortrait ? (
+    /* TV em pé: 1º lugar em destaque de largura total, 2º e 3º lado a lado */
+    <div className="flex flex-col gap-px w-full" style={camada} aria-hidden={!ativo}>
+      <PodiumCard entry={podium[0]} rankIdx={0} layout="hero" fmt={fmt} ativo={ativo} />
+      {runnersUp.length > 0 && (
+        <div className={`grid gap-px ${runnersUp.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+          style={{ background: "var(--border)" }}>
+          {runnersUp.map((entry, i) => (
+            <PodiumCard key={chave(entry)} entry={entry} rankIdx={i + 1} layout="row" fmt={fmt} ativo={ativo} />
+          ))}
+        </div>
+      )}
+    </div>
+  ) : (
+    /* Paisagem: três colunas clássicas */
+    <div className={`grid gap-px mx-auto w-full ${podiumCols}`}
+      style={{ ...camada, overflow: "hidden" }} aria-hidden={!ativo}>
+      {podium.map((entry, i) => (
+        <PodiumCard key={chave(entry)} entry={entry} rankIdx={i} layout="stack" fmt={fmt} ativo={ativo} />
+      ))}
     </div>
   );
 }
@@ -339,12 +407,7 @@ export default function TVPage() {
   const fmt = (v: number) =>
     v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
 
-  const podium = ranking.slice(0, 3);
-  const runnersUp = podium.slice(1);
-  const podiumCols =
-    podium.length === 1 ? "grid-cols-1 max-w-xs" :
-    podium.length === 2 ? "grid-cols-2 max-w-2xl" :
-    "grid-cols-3 max-w-5xl";
+  const temPodio = ranking.length > 0;
 
   return (
     <div className="tv-shell relative w-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
@@ -459,31 +522,11 @@ export default function TVPage() {
           )}
 
           {/* ── Podium ─────────────────────────────────── */}
-          {!loading && podium.length > 0 && (
-            isPortrait ? (
-              /* TV em pé: 1º lugar em destaque de largura total, 2º e 3º lado a lado */
-              <div className="flex flex-col gap-px flex-shrink-0 w-full"
-                style={{ background: "var(--border)", marginBottom: "var(--stack)" }}>
-                <PodiumCard entry={podium[0]} rankIdx={0} layout="hero" fmt={fmt} />
-                {runnersUp.length > 0 && (
-                  <div className={`grid gap-px ${runnersUp.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
-                    style={{ background: "var(--border)" }}>
-                    {runnersUp.map((entry, i) => (
-                      <PodiumCard key={entry.id ?? `${entry.nome}-${entry.pos}`} entry={entry} rankIdx={i + 1} layout="row" fmt={fmt} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Paisagem: três colunas clássicas */
-              <div
-                className={`grid gap-px flex-shrink-0 mx-auto w-full ${podiumCols}`}
-                style={{ background: "var(--border)", overflow: "hidden", marginBottom: "var(--stack)" }}>
-                {podium.map((entry, i) => (
-                  <PodiumCard key={entry.id ?? `${entry.nome}-${entry.pos}`} entry={entry} rankIdx={i} layout="stack" fmt={fmt} />
-                ))}
-              </div>
-            )
+          {!loading && temPodio && (
+            <div className="grid flex-shrink-0 w-full" style={{ marginBottom: "var(--stack)" }}>
+              <Podio podium={mensalRanking.slice(0, 3)} ativo={activeView === "mensal"} isPortrait={isPortrait} fmt={fmt} />
+              <Podio podium={anualRanking.slice(0, 3)}  ativo={activeView === "anual"}  isPortrait={isPortrait} fmt={fmt} />
+            </div>
           )}
 
           {/* ── Table ──────────────────────────────────── */}
